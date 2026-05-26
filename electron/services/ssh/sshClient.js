@@ -6,6 +6,7 @@ import ssh2 from 'ssh2'
 const { Client } = ssh2
 
 const DEFAULT_TIMEOUT_MS = 10000
+const MAX_OUTPUT_CHARS = 50000
 
 export async function testSshConnection(input) {
   const startedAt = Date.now()
@@ -36,6 +37,44 @@ export async function testSshConnection(input) {
   }
 }
 
+export async function executeSshCommand(input, command) {
+  const startedAt = Date.now()
+  const logs = []
+
+  try {
+    const normalized = await normalizeConnectionInput(input)
+    const normalizedCommand = normalizeCommand(command)
+
+    appendLog(logs, `准备连接 ${normalized.username}@${normalized.host}:${normalized.port}`)
+    appendLog(logs, `准备执行命令: ${summarizeCommand(normalizedCommand)}`)
+
+    const connectionConfig = await toSshConfig(normalized)
+    const result = await connectAndExecute(connectionConfig, normalizedCommand, logs)
+
+    return {
+      ...result,
+      command: normalizedCommand,
+      durationMs: Date.now() - startedAt,
+      logs,
+    }
+  } catch (error) {
+    appendLog(logs, sanitizeError(error))
+
+    return {
+      ok: false,
+      status: 'failed',
+      command: normalizeCommandFallback(command),
+      message: sanitizeError(error),
+      stdout: '',
+      stderr: '',
+      exitCode: null,
+      signal: null,
+      durationMs: Date.now() - startedAt,
+      logs,
+    }
+  }
+}
+
 async function normalizeConnectionInput(input = {}) {
   const host = String(input.host || '').trim()
   const username = String(input.username || '').trim()
@@ -48,7 +87,7 @@ async function normalizeConnectionInput(input = {}) {
   }
 
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new Error('端口必须是 1 到 65535 之间的数字')
+    throw new Error('端口必须是 1 到 65535 之间的整数')
   }
 
   if (!username) {
@@ -77,6 +116,20 @@ async function normalizeConnectionInput(input = {}) {
     passphrase: String(input.passphrase || ''),
     timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : DEFAULT_TIMEOUT_MS,
   }
+}
+
+function normalizeCommand(command) {
+  const normalizedCommand = String(command || '').trim()
+
+  if (!normalizedCommand) {
+    throw new Error('请输入要执行的 Linux 命令')
+  }
+
+  return normalizedCommand
+}
+
+function normalizeCommandFallback(command) {
+  return String(command || '').trim()
 }
 
 async function toSshConfig(config) {
@@ -161,6 +214,105 @@ function connectAndProbe(connectionConfig, logs) {
   })
 }
 
+function connectAndExecute(connectionConfig, command, logs) {
+  return new Promise((resolve) => {
+    const client = new Client()
+    let settled = false
+
+    const finish = (payload) => {
+      if (settled) {
+        return
+      }
+
+      settled = true
+      client.end()
+      resolve(payload)
+    }
+
+    client
+      .on('ready', () => {
+        appendLog(logs, 'SSH 握手成功，正在执行远程命令')
+
+        client.exec(command, (error, stream) => {
+          if (error) {
+            finish({
+              ok: false,
+              status: 'failed',
+              message: `命令启动失败：${sanitizeError(error)}`,
+              stdout: '',
+              stderr: '',
+              exitCode: null,
+              signal: null,
+            })
+            return
+          }
+
+          let stdout = ''
+          let stderr = ''
+
+          stream
+            .on('close', (code, signal) => {
+              const exitCode = Number.isInteger(code) ? code : null
+              const normalizedSignal = signal || null
+              const succeeded = (exitCode ?? 0) === 0 && !normalizedSignal
+
+              appendLog(
+                logs,
+                succeeded
+                  ? '命令执行完成'
+                  : `命令执行结束，退出码 ${exitCode ?? '-'}${normalizedSignal ? `，信号 ${normalizedSignal}` : ''}`,
+              )
+
+              finish({
+                ok: succeeded,
+                status: succeeded ? 'completed' : 'failed',
+                message: succeeded
+                  ? '命令执行成功'
+                  : buildCommandFailureMessage(exitCode, normalizedSignal),
+                stdout: trimOutput(stdout),
+                stderr: trimOutput(stderr),
+                exitCode,
+                signal: normalizedSignal,
+              })
+            })
+            .on('data', (data) => {
+              stdout += data.toString()
+            })
+
+          stream.stderr.on('data', (data) => {
+            stderr += data.toString()
+          })
+        })
+      })
+      .on('error', (error) => {
+        appendLog(logs, 'SSH 连接失败')
+        finish({
+          ok: false,
+          status: 'failed',
+          message: sanitizeSshError(error),
+          stdout: '',
+          stderr: '',
+          exitCode: null,
+          signal: null,
+        })
+      })
+      .on('timeout', () => {
+        appendLog(logs, 'SSH 连接超时')
+        finish({
+          ok: false,
+          status: 'failed',
+          message: '连接超时，请检查服务器地址、端口或防火墙',
+          stdout: '',
+          stderr: '',
+          exitCode: null,
+          signal: null,
+        })
+      })
+
+    client.connect(connectionConfig)
+  })
+}
+
 async function collectRemoteInfo(client) {
   const username = await execText(client, 'whoami')
   const hostname = await execText(client, 'hostname')
@@ -201,6 +353,34 @@ function execText(client, command) {
       })
     })
   })
+}
+
+function buildCommandFailureMessage(exitCode, signal) {
+  if (signal) {
+    return `命令执行被中断（signal: ${signal}）`
+  }
+
+  if (Number.isInteger(exitCode)) {
+    return `命令执行失败（exit code: ${exitCode})`
+  }
+
+  return '命令执行失败'
+}
+
+function trimOutput(output) {
+  if (!output) {
+    return ''
+  }
+
+  if (output.length <= MAX_OUTPUT_CHARS) {
+    return output
+  }
+
+  return `${output.slice(0, MAX_OUTPUT_CHARS)}\n\n[output truncated]`
+}
+
+function summarizeCommand(command) {
+  return command.replace(/\s+/g, ' ').slice(0, 80)
 }
 
 function appendLog(logs, message) {

@@ -1,4 +1,5 @@
 <script setup>
+// 收集 SSH 配置参数，并把用户操作意图抛给所属页面处理。
 const props = defineProps({
   modelValue: {
     type: Object,
@@ -28,7 +29,7 @@ function updateField(field, value) {
         <h3>服务器信息</h3>
       </div>
       <button class="primary-button" type="submit" :disabled="busy">
-        {{ busy ? '测试中' : '测试连接' }}
+        {{ busy ? '测试中...' : '测试连接' }}
       </button>
     </div>
 
@@ -111,7 +112,7 @@ function updateField(field, value) {
           <input
             :value="modelValue.privateKeyPath"
             type="text"
-            placeholder="C:\\Users\\you\\.ssh\\id_rsa 或 server.pem"
+            placeholder="C:\Users\you\.ssh\id_rsa 或 server.pem"
             @input="updateField('privateKeyPath', $event.target.value)"
           />
           <button type="button" class="secondary-button" @click="emit('selectKey')">

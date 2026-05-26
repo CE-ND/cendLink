@@ -1,10 +1,15 @@
 <script setup>
+// 展示最近一次 SSH 连接结果和远程环境探测信息。
 defineProps({
   result: {
     type: Object,
     default: null,
   },
   busy: {
+    type: Boolean,
+    default: false,
+  },
+  stale: {
     type: Boolean,
     default: false,
   },
@@ -18,8 +23,15 @@ defineProps({
         <p class="eyebrow">Connection State</p>
         <h3>连接状态</h3>
       </div>
-      <span class="state-pill" :class="{ success: result?.ok, failed: result && !result.ok }">
-        {{ busy ? 'Testing' : result?.status || 'Idle' }}
+      <span
+        class="state-pill"
+        :class="{
+          success: result?.ok && !stale,
+          failed: result && !result.ok,
+          warning: stale,
+        }"
+      >
+        {{ busy ? 'Testing' : stale ? 'Retest Required' : result?.status || 'Idle' }}
       </span>
     </div>
 
@@ -34,7 +46,10 @@ defineProps({
     </div>
 
     <div v-else class="result-block">
-      <p class="result-message" :class="{ ok: result.ok }">{{ result.message }}</p>
+      <p v-if="stale" class="result-message warning">
+        连接配置已变更，当前结果仅供参考，请重新测试。
+      </p>
+      <p class="result-message" :class="{ ok: result.ok && !stale }">{{ result.message }}</p>
 
       <dl class="meta-grid">
         <div>

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, ipcMain } from 'electron'
+import { app, BrowserWindow, Menu, ipcMain, screen } from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerSshHandlers } from '../ipc/ssh.handlers.js'
@@ -9,11 +9,15 @@ const __dirname = path.dirname(__filename)
 let mainWindow
 
 function createWindow() {
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { x, y, width, height } = primaryDisplay.bounds
+
   mainWindow = new BrowserWindow({
-    fullscreen: true,
+    x,
+    y,
+    width,
+    height,
     autoHideMenuBar: true,
-    width: 1180,
-    height: 760,
     minWidth: 980,
     minHeight: 620,
     title: 'CendLink',

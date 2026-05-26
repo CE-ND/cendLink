@@ -40,7 +40,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -128,6 +129,10 @@ h3 {
 .nav-item.active {
   color: var(--text);
   background: var(--surface);
+}
+
+.nav-item.disabled {
+  color: var(--text-soft);
 }
 
 .server-list {
@@ -218,6 +223,12 @@ h3 {
   color: var(--danger);
   border-color: oklch(58% 0.16 25 / 35%);
   background: oklch(58% 0.16 25 / 9%);
+}
+
+.state-pill.warning {
+  color: oklch(57% 0.11 75);
+  border-color: oklch(72% 0.14 75 / 35%);
+  background: oklch(72% 0.14 75 / 12%);
 }
 
 .content-grid {
@@ -353,6 +364,122 @@ input:focus {
   overflow: hidden;
 }
 
+.workspace-content {
+  min-height: 0;
+}
+
+.command-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  padding: 18px;
+  min-height: 0;
+}
+
+.command-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.command-view {
+  display: grid;
+  height: 100%;
+  min-height: 0;
+}
+
+.command-textarea {
+  width: 100%;
+  flex: 1;
+  min-height: 280px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface);
+  outline: none;
+  resize: vertical;
+  font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.command-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+}
+
+.command-textarea:disabled {
+  background: var(--surface-muted);
+}
+
+.command-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.command-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.command-stat {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--text-muted);
+  background: var(--bg);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.command-hint,
+.command-message {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.command-hint {
+  color: var(--text-muted);
+}
+
+.command-message {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.result-message.warning,
+.command-message.warning {
+  color: oklch(57% 0.11 75);
+}
+
+.command-message.ok {
+  color: var(--success);
+}
+
+.placeholder-panel {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  height: 100%;
+  padding: 24px;
+}
+
+.placeholder-copy {
+  max-width: 720px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+}
+
 .status-empty {
   display: grid;
   gap: 8px;
@@ -442,6 +569,29 @@ input:focus {
   font-weight: 700;
 }
 
+.terminal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.terminal-action {
+  min-width: 72px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 999px;
+  color: var(--terminal-text);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.terminal-action:hover {
+  border-color: oklch(58% 0.02 245);
+  background: oklch(84% 0.015 245 / 6%);
+}
+
 .terminal-panel pre {
   overflow: auto;
   height: 224px;
@@ -449,10 +599,68 @@ input:focus {
   padding: 14px;
 }
 
+.terminal-scrollable {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.terminal-scrollable::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 .terminal-panel code {
   font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.terminal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: oklch(8% 0.01 245 / 68%);
+  backdrop-filter: blur(4px);
+}
+
+.terminal-modal-card {
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  width: min(1280px, 100%);
+  height: min(860px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--terminal-border);
+  border-radius: 14px;
+  background: var(--terminal);
+  box-shadow: 0 24px 60px oklch(5% 0.01 245 / 45%);
+  color: var(--terminal-text);
+}
+
+.terminal-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--terminal-border);
+  color: oklch(76% 0.015 245);
+  font-size: 13px;
+}
+
+.terminal-modal-body {
+  overflow: auto;
+  margin: 0;
+  padding: 18px;
+}
+
+.terminal-modal-body code {
+  font-family: 'Cascadia Code', Consolas, ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.8;
   white-space: pre-wrap;
 }
 

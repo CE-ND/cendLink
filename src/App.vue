@@ -1,7 +1,7 @@
 <script setup>
-import ConnectionsView from './features/connections/pages/ConnectionsView.vue'
+// 根组件只负责把渲染控制权交给基于路由的应用壳层。
 </script>
 
 <template>
-  <ConnectionsView />
+  <RouterView />
 </template>
