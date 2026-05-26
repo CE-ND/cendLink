@@ -1,0 +1,145 @@
+<script setup>
+const props = defineProps({
+  modelValue: {
+    type: Object,
+    required: true,
+  },
+  busy: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+const emit = defineEmits(['update:modelValue', 'test', 'selectKey'])
+
+function updateField(field, value) {
+  emit('update:modelValue', {
+    ...props.modelValue,
+    [field]: value,
+  })
+}
+</script>
+
+<template>
+  <form class="panel connection-form" @submit.prevent="emit('test')">
+    <div class="panel-header">
+      <div>
+        <p class="eyebrow">Server Profile</p>
+        <h3>服务器信息</h3>
+      </div>
+      <button class="primary-button" type="submit" :disabled="busy">
+        {{ busy ? '测试中' : '测试连接' }}
+      </button>
+    </div>
+
+    <label class="field">
+      <span>名称</span>
+      <input
+        :value="modelValue.name"
+        type="text"
+        placeholder="生产服务器"
+        @input="updateField('name', $event.target.value)"
+      />
+    </label>
+
+    <div class="field-row">
+      <label class="field fill">
+        <span>Host</span>
+        <input
+          :value="modelValue.host"
+          type="text"
+          placeholder="192.168.1.10 或 example.com"
+          autocomplete="off"
+          @input="updateField('host', $event.target.value)"
+        />
+      </label>
+
+      <label class="field port">
+        <span>Port</span>
+        <input
+          :value="modelValue.port"
+          type="number"
+          min="1"
+          max="65535"
+          @input="updateField('port', Number($event.target.value))"
+        />
+      </label>
+    </div>
+
+    <label class="field">
+      <span>Username</span>
+      <input
+        :value="modelValue.username"
+        type="text"
+        autocomplete="username"
+        @input="updateField('username', $event.target.value)"
+      />
+    </label>
+
+    <div class="segmented" role="group" aria-label="认证方式">
+      <button
+        type="button"
+        :class="{ selected: modelValue.authType === 'password' }"
+        @click="updateField('authType', 'password')"
+      >
+        密码
+      </button>
+      <button
+        type="button"
+        :class="{ selected: modelValue.authType === 'privateKey' }"
+        @click="updateField('authType', 'privateKey')"
+      >
+        PEM / 私钥
+      </button>
+    </div>
+
+    <label v-if="modelValue.authType === 'password'" class="field">
+      <span>Password</span>
+      <input
+        :value="modelValue.password"
+        type="password"
+        autocomplete="current-password"
+        placeholder="不会写入日志"
+        @input="updateField('password', $event.target.value)"
+      />
+    </label>
+
+    <template v-else>
+      <div class="field">
+        <span>PEM / Private Key File</span>
+        <div class="file-input-row">
+          <input
+            :value="modelValue.privateKeyPath"
+            type="text"
+            placeholder="C:\\Users\\you\\.ssh\\id_rsa 或 server.pem"
+            @input="updateField('privateKeyPath', $event.target.value)"
+          />
+          <button type="button" class="secondary-button" @click="emit('selectKey')">
+            选择文件
+          </button>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Passphrase</span>
+        <input
+          :value="modelValue.passphrase"
+          type="password"
+          placeholder="可选"
+          @input="updateField('passphrase', $event.target.value)"
+        />
+      </label>
+    </template>
+
+    <label class="field">
+      <span>Timeout</span>
+      <input
+        :value="modelValue.timeoutMs"
+        type="number"
+        min="3000"
+        step="1000"
+        @input="updateField('timeoutMs', Number($event.target.value))"
+      />
+    </label>
+  </form>
+</template>
