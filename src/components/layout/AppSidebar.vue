@@ -3,26 +3,45 @@ import { useRoute, useRouter } from 'vue-router'
 
 // 侧边栏是渲染进程工作区页面的统一导航入口。
 defineProps({
+  // 当前表单中的服务器名称，用于没有保存记录时的默认展示。
   serverName: {
     type: String,
     default: '',
   },
+  // 当前表单中的 Host，用于没有保存记录时的默认展示。
   serverHost: {
+    type: String,
+    default: '',
+  },
+  // 已保存服务器列表。
+  servers: {
+    type: Array,
+    default: () => [],
+  },
+  // 当前选中的服务器 id，用于高亮侧边栏记录。
+  activeServerId: {
     type: String,
     default: '',
   },
 })
 
+const emit = defineEmits(['selectServer'])
+
 const route = useRoute()
 const router = useRouter()
 
+// 左侧主导航。routeName 对应 src/router/index.js 中的路由 name。
 const navigationItems = [
   { routeName: 'servers', label: '服务器' },
+  { routeName: 'package', label: '镜像打包' },
   { routeName: 'commands', label: '命令' },
   { routeName: 'history', label: '部署记录' },
   { routeName: 'settings', label: '设置' },
 ]
 
+/**
+ * 切换工作区页面。
+ */
 function navigate(routeName) {
   if (route.name === routeName) {
     return
@@ -52,8 +71,31 @@ function navigate(routeName) {
       </button>
     </nav>
 
-    <section class="server-list" aria-label="当前服务器">
-      <div class="server-row selected">
+    <section class="server-list" aria-label="已保存服务器">
+      <p class="server-list-title">已保存服务器</p>
+
+      <button
+        v-for="server in servers"
+        :key="server.id"
+        class="server-row server-row-button"
+        :class="{ selected: activeServerId === server.id }"
+        type="button"
+        @click="emit('selectServer', server.id)"
+      >
+        <span
+          class="status-dot"
+          :class="{
+            connected: server.lastStatus === 'connected',
+            failed: server.lastStatus === 'failed',
+          }"
+        ></span>
+        <div>
+          <strong>{{ server.name }}</strong>
+          <small>{{ server.host }}:{{ server.port }}</small>
+        </div>
+      </button>
+
+      <div v-if="!servers.length" class="server-row selected">
         <span class="status-dot"></span>
         <div>
           <strong>{{ serverName || '默认服务器' }}</strong>

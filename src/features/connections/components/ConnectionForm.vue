@@ -1,18 +1,28 @@
 <script setup>
 // 收集 SSH 配置参数，并把用户操作意图抛给所属页面处理。
 const props = defineProps({
+  // 服务器表单对象，对应 useWorkspaceSession.js 里的 form。
   modelValue: {
     type: Object,
     required: true,
   },
+  // 连接测试或命令执行中，用于禁用表单按钮。
   busy: {
+    type: Boolean,
+    default: false,
+  },
+  // 保存服务器配置中，用于显示保存按钮状态。
+  saving: {
     type: Boolean,
     default: false,
   },
 })
 
-const emit = defineEmits(['update:modelValue', 'test', 'selectKey'])
+const emit = defineEmits(['update:modelValue', 'test', 'selectKey', 'save'])
 
+/**
+ * 更新表单中的单个字段，并通过 v-model 把完整表单回传给父组件。
+ */
 function updateField(field, value) {
   emit('update:modelValue', {
     ...props.modelValue,
@@ -28,9 +38,19 @@ function updateField(field, value) {
         <p class="eyebrow">Server Profile</p>
         <h3>服务器信息</h3>
       </div>
-      <button class="primary-button" type="submit" :disabled="busy">
-        {{ busy ? '测试中...' : '测试连接' }}
-      </button>
+      <div class="panel-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="busy || saving"
+          @click="emit('save')"
+        >
+          {{ saving ? '保存中...' : '保存服务器' }}
+        </button>
+        <button class="primary-button" type="submit" :disabled="busy || saving">
+          {{ busy ? '测试中...' : '测试连接' }}
+        </button>
+      </div>
     </div>
 
     <label class="field">
@@ -77,7 +97,13 @@ function updateField(field, value) {
       />
     </label>
 
-    <div class="segmented" role="group" aria-label="认证方式">
+    <div
+      class="segmented"
+      :class="{ 'is-private-key': modelValue.authType === 'privateKey' }"
+      role="group"
+      aria-label="认证方式"
+    >
+      <span class="segment-thumb" aria-hidden="true"></span>
       <button
         type="button"
         :class="{ selected: modelValue.authType === 'password' }"
@@ -94,43 +120,53 @@ function updateField(field, value) {
       </button>
     </div>
 
-    <label v-if="modelValue.authType === 'password'" class="field">
-      <span>Password</span>
-      <input
-        :value="modelValue.password"
-        type="password"
-        autocomplete="current-password"
-        placeholder="不会写入日志"
-        @input="updateField('password', $event.target.value)"
-      />
-    </label>
-
-    <template v-else>
-      <div class="field">
-        <span>PEM / Private Key File</span>
-        <div class="file-input-row">
-          <input
-            :value="modelValue.privateKeyPath"
-            type="text"
-            placeholder="C:\Users\you\.ssh\id_rsa 或 server.pem"
-            @input="updateField('privateKeyPath', $event.target.value)"
-          />
-          <button type="button" class="secondary-button" @click="emit('selectKey')">
-            选择文件
-          </button>
-        </div>
-      </div>
-
-      <label class="field">
-        <span>Passphrase</span>
+    <div class="auth-fields" :class="{ 'is-private-key': modelValue.authType === 'privateKey' }">
+      <label v-if="modelValue.authType === 'password'" class="field">
+        <span>Password</span>
         <input
-          :value="modelValue.passphrase"
+          :value="modelValue.password"
           type="password"
-          placeholder="可选"
-          @input="updateField('passphrase', $event.target.value)"
+          autocomplete="current-password"
+          placeholder="不会写入日志"
+          @input="updateField('password', $event.target.value)"
         />
+        <label class="checkbox-field">
+          <input
+            :checked="modelValue.rememberPassword"
+            type="checkbox"
+            @change="updateField('rememberPassword', $event.target.checked)"
+          />
+          <span>记住密码</span>
+        </label>
       </label>
-    </template>
+
+      <template v-else>
+        <div class="field">
+          <span>PEM / Private Key File</span>
+          <div class="file-input-row">
+            <input
+              :value="modelValue.privateKeyPath"
+              type="text"
+              placeholder="C:\Users\you\.ssh\id_rsa 或 server.pem"
+              @input="updateField('privateKeyPath', $event.target.value)"
+            />
+            <button type="button" class="secondary-button" @click="emit('selectKey')">
+              选择文件
+            </button>
+          </div>
+        </div>
+
+        <label class="field">
+          <span>Passphrase</span>
+          <input
+            :value="modelValue.passphrase"
+            type="password"
+            placeholder="可选"
+            @input="updateField('passphrase', $event.target.value)"
+          />
+        </label>
+      </template>
+    </div>
 
     <label class="field">
       <span>Timeout</span>

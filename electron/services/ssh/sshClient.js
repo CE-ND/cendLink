@@ -5,9 +5,15 @@ import ssh2 from 'ssh2'
 
 const { Client } = ssh2
 
+// 默认 SSH 握手超时时间，前端表单不填或填错时使用。
 const DEFAULT_TIMEOUT_MS = 10000
+// 命令输出最多返回给渲染进程的字符数，避免超大日志撑爆界面和 IPC。
 const MAX_OUTPUT_CHARS = 50000
 
+/**
+ * 测试 SSH 连接，并在登录成功后采集远程环境信息。
+ * 入参来自连接表单；返回值用于 ConnectionStatus 和 Activity Log 展示。
+ */
 export async function testSshConnection(input) {
   const startedAt = Date.now()
   const logs = []
@@ -37,6 +43,10 @@ export async function testSshConnection(input) {
   }
 }
 
+/**
+ * 使用当前 SSH 配置执行一条远程 Linux 命令。
+ * 返回 stdout、stderr、exitCode、signal、耗时和日志，供命令页和历史记录使用。
+ */
 export async function executeSshCommand(input, command) {
   const startedAt = Date.now()
   const logs = []
@@ -75,6 +85,15 @@ export async function executeSshCommand(input, command) {
   }
 }
 
+/**
+ * 规范化并校验连接参数。
+ * 返回字段说明：
+ * - host/port/username：SSH 连接目标。
+ * - authType：password 或 privateKey。
+ * - password：密码登录时使用，不会写入日志。
+ * - privateKeyPath/passphrase：私钥登录时读取本地 PEM/私钥文件。
+ * - timeoutMs：ssh2 readyTimeout。
+ */
 async function normalizeConnectionInput(input = {}) {
   const host = String(input.host || '').trim()
   const username = String(input.username || '').trim()
@@ -118,6 +137,9 @@ async function normalizeConnectionInput(input = {}) {
   }
 }
 
+/**
+ * 校验并清洗远程命令文本。
+ */
 function normalizeCommand(command) {
   const normalizedCommand = String(command || '').trim()
 
@@ -128,10 +150,17 @@ function normalizeCommand(command) {
   return normalizedCommand
 }
 
+/**
+ * 异常分支中尽量保留用户原始命令，便于日志和历史记录定位。
+ */
 function normalizeCommandFallback(command) {
   return String(command || '').trim()
 }
 
+/**
+ * 把业务配置转换成 ssh2 Client.connect 需要的配置。
+ * 密码模式设置 password；私钥模式读取 privateKey 文件内容。
+ */
 async function toSshConfig(config) {
   const sshConfig = {
     host: config.host,
@@ -156,6 +185,9 @@ async function toSshConfig(config) {
   return sshConfig
 }
 
+/**
+ * 建立 SSH 连接并执行一组探测命令，用于确认服务器环境。
+ */
 function connectAndProbe(connectionConfig, logs) {
   return new Promise((resolve) => {
     const client = new Client()
@@ -214,6 +246,9 @@ function connectAndProbe(connectionConfig, logs) {
   })
 }
 
+/**
+ * 建立 SSH 连接并执行用户输入的单条命令。
+ */
 function connectAndExecute(connectionConfig, command, logs) {
   return new Promise((resolve) => {
     const client = new Client()
@@ -313,6 +348,9 @@ function connectAndExecute(connectionConfig, command, logs) {
   })
 }
 
+/**
+ * 读取远程主机的基础信息，连接测试成功后展示在状态面板。
+ */
 async function collectRemoteInfo(client) {
   const username = await execText(client, 'whoami')
   const hostname = await execText(client, 'hostname')
@@ -329,6 +367,10 @@ async function collectRemoteInfo(client) {
   }
 }
 
+/**
+ * 执行一条远程命令并返回文本结果。
+ * stdout 为空时会回退读取 stderr，适合 java -version 这类输出到 stderr 的命令。
+ */
 function execText(client, command) {
   return new Promise((resolve, reject) => {
     client.exec(command, (error, stream) => {
@@ -355,6 +397,9 @@ function execText(client, command) {
   })
 }
 
+/**
+ * 根据 exitCode 或 signal 生成用户可读的命令失败原因。
+ */
 function buildCommandFailureMessage(exitCode, signal) {
   if (signal) {
     return `命令执行被中断（signal: ${signal}）`
@@ -367,6 +412,9 @@ function buildCommandFailureMessage(exitCode, signal) {
   return '命令执行失败'
 }
 
+/**
+ * 裁剪过长输出，保护 UI 渲染和 IPC 传输。
+ */
 function trimOutput(output) {
   if (!output) {
     return ''
@@ -379,15 +427,24 @@ function trimOutput(output) {
   return `${output.slice(0, MAX_OUTPUT_CHARS)}\n\n[output truncated]`
 }
 
+/**
+ * 把多行命令压成一行摘要，用于日志标题。
+ */
 function summarizeCommand(command) {
   return command.replace(/\s+/g, ' ').slice(0, 80)
 }
 
+/**
+ * 给日志追加统一时间前缀。
+ */
 function appendLog(logs, message) {
   const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   logs.push(`[${time}] ${message}`)
 }
 
+/**
+ * 支持用户输入 ~/xxx 形式的私钥路径。
+ */
 function expandHome(filePath) {
   if (filePath === '~') {
     return os.homedir()
@@ -400,6 +457,9 @@ function expandHome(filePath) {
   return filePath
 }
 
+/**
+ * 把 ssh2/网络层错误转换成更适合界面展示的中文提示。
+ */
 function sanitizeSshError(error) {
   const message = sanitizeError(error)
 
@@ -422,6 +482,9 @@ function sanitizeSshError(error) {
   return message
 }
 
+/**
+ * 统一提取 Error 对象的 message。
+ */
 function sanitizeError(error) {
   if (!error) {
     return '未知错误'

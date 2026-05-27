@@ -3,22 +3,27 @@ import { computed } from 'vue'
 
 // 命令执行器负责一次性 Linux 命令输入，并展示最近一次执行摘要。
 const props = defineProps({
+  // 命令输入框文本。
   modelValue: {
     type: String,
     default: '',
   },
+  // 远程命令执行中状态。
   busy: {
     type: Boolean,
     default: false,
   },
+  // 父组件根据连接状态决定是否允许执行命令。
   disabled: {
     type: Boolean,
     default: false,
   },
+  // 最近一次命令执行结果。
   result: {
     type: Object,
     default: null,
   },
+  // 当前不可执行或可执行状态的说明文案。
   hint: {
     type: String,
     default: '',
@@ -27,10 +32,14 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'execute', 'clear'])
 
+// 按钮禁用规则：执行中、连接状态不允许执行、或命令为空。
 const executeDisabled = computed(() => {
   return props.busy || props.disabled || !props.modelValue.trim()
 })
 
+/**
+ * 支持 Ctrl/Cmd + Enter 快捷执行命令。
+ */
 function handleKeydown(event) {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && !executeDisabled.value) {
     emit('execute')

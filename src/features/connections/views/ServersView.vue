@@ -9,8 +9,10 @@ const {
   result,
   isTesting,
   isExecutingCommand,
+  isSavingServer,
   needsRetest,
   updateForm,
+  saveCurrentServer,
   testConnection,
   selectPrivateKeyFile,
 } = useWorkspaceSession()
@@ -21,8 +23,10 @@ const {
     <ConnectionForm
       :model-value="form"
       :busy="isTesting || isExecutingCommand"
+      :saving="isSavingServer"
       @update:model-value="updateForm"
       @select-key="selectPrivateKeyFile"
+      @save="saveCurrentServer"
       @test="testConnection"
     />
 

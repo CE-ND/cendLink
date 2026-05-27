@@ -174,6 +174,29 @@ SSH 实现定义在：
 
 - `electron/services/ssh/sshClient.js`
 
+本地数据存储定义在：
+
+- `electron/services/database/index.js`
+- `electron/services/database/migrations/*.sql`
+- `electron/services/database/repositories/*Repository.js`
+
+运行时数据目录固定为：
+
+- `~/.cendLink`
+
+当前会在 `~/.cendLink/cendlink.db` 中保存：
+
+- 服务器配置
+- 命令执行记录
+- 部署记录基础表和部署步骤表
+- 应用设置
+
+密码记忆是用户显式勾选行为：
+
+- 未勾选 `记住密码` 时，不保存密码，下次启动密码为空。
+- 勾选 `记住密码` 时，通过 Electron `safeStorage` 加密后保存到 `servers.password_secret`。
+- 数据库不保存私钥文件内容，也不保存 PEM passphrase。
+
 约束：
 
 - 不要在 Vue 页面或 composable 里直接导入 Electron API 或 `ssh2`。

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import AppSidebar from '../components/layout/AppSidebar.vue'
 import TerminalOutput from '../components/terminal/TerminalOutput.vue'
@@ -7,18 +7,41 @@ import { useWorkspaceSession } from '../features/workspace/composables/useWorksp
 
 // 共享壳层负责固定布局框架，路由页面只在内容区域切换。
 const route = useRoute()
-const { form, logs, hasElectronBridge } = useWorkspaceSession()
 
+// 从共享会话取出跨页面需要的状态和动作。
+const {
+  form,
+  logs,
+  hasElectronBridge,
+  savedServers,
+  activeServerId,
+  loadStoredData,
+  selectSavedServer,
+} = useWorkspaceSession()
+
+// 当前页面头部的小标题和标题，来自路由 meta。
 const pageEyebrow = computed(() => route.meta.eyebrow || 'Workspace')
 const pageTitle = computed(() => route.meta.title || '远程工作区')
+// 判断 preload 桥是否可用，用于提示当前是 Electron 模式还是浏览器预览。
 const bridgeStatusText = computed(() => {
   return hasElectronBridge.value ? 'Electron 已连接' : '浏览器预览'
+})
+
+// 应用壳挂载后读取本地数据库内容。
+onMounted(() => {
+  loadStoredData()
 })
 </script>
 
 <template>
   <main class="connection-page">
-    <AppSidebar :server-name="form.name" :server-host="form.host" />
+    <AppSidebar
+      :server-name="form.name"
+      :server-host="form.host"
+      :servers="savedServers"
+      :active-server-id="activeServerId"
+      @select-server="selectSavedServer"
+    />
 
     <section class="workspace">
       <header class="workspace-header">

@@ -3,22 +3,33 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 // 展示当前工作区的共享活动日志，并支持放大查看长日志。
 defineProps({
+  // 已格式化的日志行，由 useWorkspaceSession 统一维护。
   lines: {
     type: Array,
     default: () => [],
   },
 })
 
+// 是否打开日志放大弹窗。
 const isExpanded = ref(false)
 
+/**
+ * 打开日志放大视图。
+ */
 function openExpanded() {
   isExpanded.value = true
 }
 
+/**
+ * 关闭日志放大视图。
+ */
 function closeExpanded() {
   isExpanded.value = false
 }
 
+/**
+ * Esc 快捷键关闭弹窗。
+ */
 function handleWindowKeydown(event) {
   if (event.key === 'Escape' && isExpanded.value) {
     closeExpanded()

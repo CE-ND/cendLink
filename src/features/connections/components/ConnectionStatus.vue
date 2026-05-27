@@ -1,14 +1,17 @@
 <script setup>
 // 展示最近一次 SSH 连接结果和远程环境探测信息。
 defineProps({
+  // testConnection 返回的结果对象，包含 ok/status/message/remote/durationMs。
   result: {
     type: Object,
     default: null,
   },
+  // 是否正在测试连接。
   busy: {
     type: Boolean,
     default: false,
   },
+  // 表单已修改但尚未重新测试时为 true。
   stale: {
     type: Boolean,
     default: false,
