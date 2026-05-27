@@ -94,7 +94,7 @@ export async function executeSshCommand(input, command) {
  * - privateKeyPath/passphrase：私钥登录时读取本地 PEM/私钥文件。
  * - timeoutMs：ssh2 readyTimeout。
  */
-async function normalizeConnectionInput(input = {}) {
+export async function normalizeConnectionInput(input = {}) {
   const host = String(input.host || '').trim()
   const username = String(input.username || '').trim()
   const authType = String(input.authType || 'password')
@@ -161,7 +161,7 @@ function normalizeCommandFallback(command) {
  * 把业务配置转换成 ssh2 Client.connect 需要的配置。
  * 密码模式设置 password；私钥模式读取 privateKey 文件内容。
  */
-async function toSshConfig(config) {
+export async function toSshConfig(config) {
   const sshConfig = {
     host: config.host,
     port: config.port,

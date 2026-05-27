@@ -12,6 +12,7 @@ import {
 import {
   listDeployments,
   recordImagePackage,
+  recordRemoteDeployment,
 } from '../services/database/repositories/deploymentRepository.js'
 import { getSetting, setSetting } from '../services/database/repositories/settingsRepository.js'
 import { decryptPassword, encryptPassword } from '../services/credential/passwordVault.js'
@@ -58,6 +59,10 @@ export function registerStorageHandlers(ipcMain) {
 
   ipcMain.handle('history:record-image-package', async (_event, imagePackage) => {
     return recordImagePackage(imagePackage)
+  })
+
+  ipcMain.handle('history:record-remote-deployment', async (_event, deployment) => {
+    return recordRemoteDeployment(deployment)
   })
 
   ipcMain.handle('settings:get', async (_event, key, fallbackValue) => {

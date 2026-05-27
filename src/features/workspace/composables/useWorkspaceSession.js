@@ -42,12 +42,38 @@ const packageForm = reactive({
   useNonRootUser: true,
   appUser: 'spring',
 })
+// 远程部署页的表单对象。
+const deployForm = reactive({
+  packageSourceType: 'history',
+  localPackagePath: '',
+  serviceName: 'demo-service',
+  serviceVersion: '1.0.0',
+  imageName: 'demo-service',
+  imageTag: '1.0.0',
+  containerName: 'demo-service',
+  hostPort: 8080,
+  containerPort: 8080,
+  remoteBaseDir: '/mnt/temp_check',
+  remotePackageDir: '/opt/cendlink/packages',
+  restartPolicy: 'unless-stopped',
+  envText: 'SPRING_PROFILES_ACTIVE=prod\nTZ=Asia/Shanghai',
+  extraArgs: '',
+  containerConflictStrategy: 'auto',
+  imageCleanupStrategy: 'keep',
+  directoryPermissionMode: 'none',
+})
 // 镜像包预览配置。
 const packagePreview = ref(null)
 // 镜像包构建结果。
 const packageResult = ref(null)
+// 部署计划预览。
+const deployPreview = ref(null)
+// 部署执行结果。
+const deployResult = ref(null)
 // 镜像包构建中状态。
 const isBuildingPackage = ref(false)
+// 远程部署进行中状态。
+const isDeploying = ref(false)
 // 连接测试进行中状态。
 const isTesting = ref(false)
 // 远程命令执行中状态。
@@ -64,12 +90,16 @@ const commandRuns = ref([])
 const deployments = ref([])
 // 当前选中的已保存服务器 id；空字符串代表尚未保存或未选中。
 const activeServerId = ref('')
+// 当前被设为默认启动目标的服务器 id。
+const pinnedServerId = ref('')
 // ~/.cendLink 存储目录信息。
 const storageInfo = ref(null)
 // 最近一次成功发起连接测试时的表单快照，用于判断配置是否已变更。
 const lastTestedSnapshot = ref('')
 // 避免多页面重复读取数据库。
 const hasLoadedStoredData = ref(false)
+// 避免应用挂载后重复触发默认服务器自动恢复。
+const hasRestoredPinnedServer = ref(false)
 // 底部 Activity Log 展示的日志行。
 const logs = ref([
   logLine('连接模块已就绪'),
@@ -80,13 +110,16 @@ const hasElectronBridge = computed(() => {
   const bridge = getStorageBridge()
   const ssh = bridge?.ssh
   const docker = bridge?.docker
+  const deployment = bridge?.deployment
 
   return Boolean(
     ssh?.testConnection &&
       ssh?.executeCommand &&
       ssh?.selectPrivateKeyFile &&
       docker?.selectJarFile &&
-      docker?.buildImagePackage,
+      docker?.buildImagePackage &&
+      deployment?.preview &&
+      deployment?.run,
   )
 })
 
@@ -98,7 +131,8 @@ const hasStorageBridge = computed(() => {
       bridge?.servers?.save &&
       bridge?.history?.listDeployments &&
       bridge?.history?.recordCommandRun &&
-      bridge?.history?.recordImagePackage,
+      bridge?.history?.recordImagePackage &&
+      bridge?.history?.recordRemoteDeployment,
   )
 })
 
@@ -142,6 +176,23 @@ const canBuildImagePackage = computed(() => {
       packageForm.serviceVersion.trim() &&
       Number.isInteger(Number(packageForm.servicePort || 0)) &&
       Number(packageForm.servicePort || 0) > 0,
+  )
+})
+
+// 当前部署配置是否完整。
+const canDeploy = computed(() => {
+  return Boolean(
+    hasElectronBridge.value &&
+      activeServerId.value &&
+      deployForm.localPackagePath &&
+      deployForm.containerName.trim() &&
+      deployForm.imageName.trim() &&
+      deployForm.imageTag.trim() &&
+      Number.isInteger(Number(deployForm.hostPort || 0)) &&
+      Number(deployForm.hostPort || 0) > 0 &&
+      Number.isInteger(Number(deployForm.containerPort || 0)) &&
+      Number(deployForm.containerPort || 0) > 0 &&
+      !isDeploying.value,
   )
 })
 
@@ -191,6 +242,27 @@ const packageHint = computed(() => {
   return '点击“生成镜像包”后，会在本地生成 Dockerfile、docker build、docker save，并压缩成 tar.gz。'
 })
 
+// 部署页提示。
+const deployHint = computed(() => {
+  if (!hasElectronBridge.value) {
+    return '请通过 Electron 模式启动应用后再执行远程部署。'
+  }
+
+  if (!activeServerId.value) {
+    return '请先选择一个已保存服务器作为部署目标。'
+  }
+
+  if (!deployForm.localPackagePath) {
+    return '请选择一个镜像包 tar.gz，或先在镜像打包页生成本地包。'
+  }
+
+  if (isDeploying.value) {
+    return '部署执行中，请等待服务器返回结果。'
+  }
+
+  return '将按预览命令上传镜像包、docker load、创建目录并启动新容器。'
+})
+
 /**
  * 合并更新服务器表单。
  * 如果连接参数发生变化，会清空最近一次命令结果，避免旧结果误导用户。
@@ -223,6 +295,16 @@ function updatePackageForm(nextValue) {
 }
 
 /**
+ * 更新部署表单，并刷新 docker run 预览。
+ */
+function updateDeployForm(nextValue) {
+  Object.assign(deployForm, nextValue)
+  deployPreview.value = null
+  deployResult.value = null
+  void refreshDeployPreview()
+}
+
+/**
  * 从 Electron 主进程读取本地存储信息、服务器列表和命令历史。
  * 该函数由 AppShell 挂载时调用一次。
  */
@@ -241,19 +323,24 @@ async function loadStoredData() {
   isLoadingStoredData.value = true
 
   try {
-    const [info, servers, runs, deploymentRows] = await Promise.all([
+    const [info, servers, runs, deploymentRows, defaultServerId] = await Promise.all([
       bridge.data.getStorageInfo(),
       bridge.servers.list(),
       bridge.history.listCommandRuns(50),
       bridge.history.listDeployments(50),
+      bridge.settings.get('defaultServerId', ''),
     ])
 
     storageInfo.value = info
     savedServers.value = servers
     commandRuns.value = runs
     deployments.value = deploymentRows
+    pinnedServerId.value = String(defaultServerId || '')
+    savedServers.value.sort(compareSavedServers)
+    hydrateDeployFormFromHistory()
     hasLoadedStoredData.value = true
     logs.value.push(logLine(`本地数据目录已就绪: ${info.dataDir}`))
+    await restorePinnedServerOnLaunch()
   } catch (error) {
     logs.value.push(logLine(`读取本地数据失败: ${error?.message || error}`))
   } finally {
@@ -285,6 +372,29 @@ async function selectJarFile() {
 }
 
 /**
+ * 选择本地镜像包 tar.gz 文件。
+ */
+async function selectDeployPackageFile() {
+  const deployment = getDeploymentBridge()
+
+  if (!deployment?.selectPackageFile) {
+    logs.value.push(logLine('当前是浏览器预览模式，无法打开镜像包选择器'))
+    return
+  }
+
+  const selected = await deployment.selectPackageFile()
+
+  if (selected?.canceled || !selected?.filePath) {
+    logs.value.push(logLine('已取消选择镜像包'))
+    return
+  }
+
+  applyDeployPackageSelection(selected.filePath)
+  logs.value.push(logLine(`已选择镜像包: ${selected.filePath}`))
+  await refreshDeployPreview()
+}
+
+/**
  * 读取主进程生成的 Dockerfile 预览和镜像名信息。
  */
 async function refreshPackagePreview() {
@@ -299,6 +409,24 @@ async function refreshPackagePreview() {
   } catch (error) {
     packagePreview.value = null
     logs.value.push(logLine(`读取镜像配置预览失败: ${error?.message || error}`))
+  }
+}
+
+/**
+ * 刷新部署计划预览，生成远程目录和 docker run 命令。
+ */
+async function refreshDeployPreview() {
+  const deployment = getDeploymentBridge()
+
+  if (!deployment?.preview) {
+    return
+  }
+
+  try {
+    deployPreview.value = await deployment.preview(toDeployPayload())
+  } catch (error) {
+    deployPreview.value = null
+    logs.value.push(logLine(`读取部署预览失败: ${error?.message || error}`))
   }
 }
 
@@ -350,6 +478,89 @@ async function buildImagePackage() {
 }
 
 /**
+ * 执行远程部署。
+ */
+async function runDeployment() {
+  if (!canDeploy.value) {
+    return
+  }
+
+  const deployment = getDeploymentBridge()
+
+  if (!deployment?.run) {
+    deployResult.value = {
+      ok: false,
+      status: 'failed',
+      message: '当前是浏览器预览模式，无法执行远程部署',
+      durationMs: 0,
+    }
+    return
+  }
+
+  const server = savedServers.value.find((item) => item.id === activeServerId.value)
+
+  if (!server) {
+    deployResult.value = {
+      ok: false,
+      status: 'failed',
+      message: '请先选择一个有效的服务器配置',
+      durationMs: 0,
+    }
+    return
+  }
+
+  isDeploying.value = true
+  logs.value = [logLine(`开始部署 ${deployForm.containerName} 到 ${server.name}`)]
+
+  try {
+    const response = await deployment.run({ ...form }, toDeployPayload())
+    deployResult.value = response
+    deployPreview.value = {
+      ...(deployPreview.value || {}),
+      ...response,
+      runCommand: response.runCommand,
+      remotePackagePath: response.remotePackagePath,
+      remoteReleaseDir: response.remoteReleaseDir,
+    }
+    logs.value = response.logs?.length ? response.logs : [logLine(response.message)]
+    const savedDeployment = await recordRemoteDeployment(response)
+    if (savedDeployment) {
+      upsertDeployment(savedDeployment)
+    }
+  } catch (error) {
+    deployResult.value = {
+      ok: false,
+      status: 'failed',
+      message: error?.message || '部署失败',
+      durationMs: 0,
+    }
+    logs.value.push(logLine(deployResult.value.message))
+  } finally {
+    isDeploying.value = false
+  }
+}
+
+/**
+ * 打开镜像包输出目录。
+ * 若本次已有生成结果，则优先定位到对应的 tar.gz 文件。
+ */
+async function openImagePackageDirectory() {
+  const docker = getDockerBridge()
+
+  if (!docker?.openImagePackageDirectory) {
+    logs.value.push(logLine('当前是浏览器预览模式，无法打开镜像包目录'))
+    return
+  }
+
+  try {
+    const response = await docker.openImagePackageDirectory(packageResult.value?.packagePath || '')
+    logs.value.push(logLine(`已打开镜像包目录: ${response?.openedPath || 'image-packages'}`))
+  } catch (error) {
+    logs.value.push(logLine(`打开镜像包目录失败: ${error?.message || error}`))
+  }
+}
+
+/**
  * 保存当前服务器配置到 SQLite。
  * 密码是否保存由 form.rememberPassword 决定，真正加密逻辑在主进程处理。
  */
@@ -374,6 +585,40 @@ async function saveCurrentServer() {
   } finally {
     isSavingServer.value = false
   }
+}
+
+/**
+ * 将指定服务器设为默认启动目标。
+ * 默认服务器会在应用启动时自动加载，并在凭据完整时尝试自动连接。
+ */
+async function pinServer(serverId) {
+  const bridge = getStorageBridge()
+  const nextServerId = String(serverId || '')
+
+  if (!bridge?.settings?.set) {
+    logs.value.push(logLine('当前是浏览器预览模式，无法设置默认服务器'))
+    return
+  }
+
+  const targetServer = savedServers.value.find((item) => item.id === nextServerId)
+
+  if (!targetServer) {
+    logs.value.push(logLine('未找到要置顶的服务器'))
+    return
+  }
+
+  const isCanceling = pinnedServerId.value === nextServerId
+  const finalServerId = isCanceling ? '' : nextServerId
+
+  await bridge.settings.set('defaultServerId', finalServerId)
+  pinnedServerId.value = finalServerId
+  savedServers.value.sort(compareSavedServers)
+
+  logs.value.push(
+    logLine(
+      isCanceling ? `已取消默认服务器: ${targetServer.name}` : `已设为默认服务器: ${targetServer.name}`,
+    ),
+  )
 }
 
 /**
@@ -406,6 +651,69 @@ function selectSavedServer(serverId) {
   commandResult.value = null
   lastTestedSnapshot.value = ''
   logs.value.push(logLine(`已载入服务器配置: ${server.name}`))
+}
+
+/**
+ * 从历史镜像包记录中带出最近一条成功记录，作为部署页默认值。
+ */
+function hydrateDeployFormFromHistory() {
+  const latestPackage = deployments.value.find((item) => item.status === 'package_success')
+
+  if (!latestPackage) {
+    return
+  }
+
+  const nextValues = inferDeployDefaultsFromDeployment(latestPackage)
+
+  if (!nextValues.localPackagePath) {
+    return
+  }
+
+  Object.assign(deployForm, nextValues)
+  void refreshDeployPreview()
+}
+
+/**
+ * 应用启动后恢复默认服务器。
+ * 规则：
+ * - 只执行一次，避免反复打断用户当前输入。
+ * - 默认先回填表单。
+ * - 若凭据完整且 Electron SSH 可用，则自动发起一次连接测试。
+ */
+async function restorePinnedServerOnLaunch() {
+  if (hasRestoredPinnedServer.value) {
+    return
+  }
+
+  hasRestoredPinnedServer.value = true
+
+  const serverId = String(pinnedServerId.value || '')
+
+  if (!serverId) {
+    return
+  }
+
+  const server = savedServers.value.find((item) => item.id === serverId)
+
+  if (!server) {
+    logs.value.push(logLine('默认服务器不存在，已跳过启动恢复'))
+    return
+  }
+
+  selectSavedServer(serverId)
+  logs.value.push(logLine(`已恢复默认服务器: ${server.name}`))
+
+  if (!hasElectronBridge.value) {
+    return
+  }
+
+  if (!canAutoConnectServer(server)) {
+    logs.value.push(logLine('默认服务器凭据不完整，已跳过自动连接'))
+    return
+  }
+
+  logs.value.push(logLine(`正在自动连接默认服务器: ${server.name}`))
+  await testConnection()
 }
 
 /**
@@ -685,6 +993,40 @@ async function recordImagePackage(response) {
 }
 
 /**
+ * 记录一次远程部署流水。
+ */
+async function recordRemoteDeployment(response) {
+  const bridge = getStorageBridge()
+
+  if (!bridge?.history?.recordRemoteDeployment) {
+    return null
+  }
+
+  try {
+    return await bridge.history.recordRemoteDeployment({
+      ok: response.ok,
+      message: response.message,
+      serverId: activeServerId.value || null,
+      remotePackagePath: response.remotePackagePath,
+      remoteReleaseDir: response.remoteReleaseDir,
+      imageRef: response.imageRef,
+      containerName: response.containerName,
+      runCommand: response.runCommand,
+      cleanupCommand: response.cleanupCommand,
+      cleanupSummary: response.cleanupSummary,
+      durationMs: response.durationMs,
+      startedAt: response.startedAt,
+      finishedAt: response.finishedAt,
+      steps: response.steps || [],
+    })
+  } catch (error) {
+    logs.value.push(logLine(`保存部署记录失败: ${error?.message || error}`))
+  }
+
+  return null
+}
+
+/**
  * 在内存中维护部署/镜像包记录。
  */
 function upsertDeployment(deployment) {
@@ -735,9 +1077,38 @@ function upsertSavedServer(server) {
     savedServers.value.unshift(server)
   }
 
-  savedServers.value.sort((left, right) => {
-    return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
-  })
+  savedServers.value.sort(compareSavedServers)
+}
+
+/**
+ * 按“默认服务器优先、更新时间倒序”排列左侧服务器列表。
+ */
+function compareSavedServers(left, right) {
+  const leftPinned = left.id === pinnedServerId.value
+  const rightPinned = right.id === pinnedServerId.value
+
+  if (leftPinned !== rightPinned) {
+    return leftPinned ? -1 : 1
+  }
+
+  return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+}
+
+/**
+ * 判断服务器是否满足启动自动连接条件。
+ * - 密码模式：必须已经保存可回填密码。
+ * - 私钥模式：必须有私钥路径；如果需要 passphrase，则用户仍需手动输入。
+ */
+function canAutoConnectServer(server) {
+  if (server.authType === 'password') {
+    return Boolean(server.password)
+  }
+
+  if (server.authType === 'privateKey') {
+    return Boolean(server.privateKeyPath)
+  }
+
+  return false
 }
 
 /**
@@ -752,6 +1123,13 @@ function getSshBridge() {
  */
 function getDockerBridge() {
   return globalThis.window?.cendlink?.docker ?? null
+}
+
+/**
+ * 获取 preload 暴露的部署 API。
+ */
+function getDeploymentBridge() {
+  return globalThis.window?.cendlink?.deployment ?? null
 }
 
 /**
@@ -794,6 +1172,104 @@ function logLine(message) {
 }
 
 /**
+ * 根据文件路径推断部署默认值。
+ */
+function applyDeployPackageSelection(filePath) {
+  const normalizedPath = String(filePath || '').trim()
+  const fileName = normalizedPath.split(/[/\\]/).pop() || ''
+  const sanitizedName = fileName
+    .replace(/\.tar\.gz$/i, '')
+    .replace(/\.tgz$/i, '')
+    .replace(/\.tar$/i, '')
+  const versionMatch = sanitizedName.match(/(?:-|_)(\d+(?:\.\d+)+(?:[-._][a-zA-Z0-9]+)?)$/)
+  const inferredVersion = versionMatch ? versionMatch[1].replace(/_/g, '.') : deployForm.serviceVersion
+  const inferredServiceName = sanitizedName
+    .replace(new RegExp(`[-_]${escapeRegExp(versionMatch?.[1] || '')}$`), '')
+    .replace(/_(\d{4})_(\d{2})_(\d{2})_/g, '')
+    .replace(/_(\d{4})_(\d{2})_(\d{2})/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || deployForm.serviceName
+
+  updateDeployForm({
+    localPackagePath: normalizedPath,
+    serviceName: inferredServiceName,
+    serviceVersion: inferredVersion,
+    imageName: inferredServiceName.toLowerCase(),
+    imageTag: inferredVersion,
+    containerName: inferredServiceName,
+  })
+}
+
+/**
+ * 从镜像包记录推断部署默认值。
+ */
+function inferDeployDefaultsFromDeployment(item) {
+  const localPackagePath = item.deployPath || ''
+  const metadata = item.metadata || {}
+  const imageRef = String(metadata.imageRef || item.projectId || '')
+  const [imageName = deployForm.imageName, imageTag = deployForm.imageTag] = imageRef.split(':')
+
+  const normalizedServiceName = imageName.replace(/[^a-zA-Z0-9._-]+/g, '_') || deployForm.serviceName
+
+  return {
+    packageSourceType: 'history',
+    localPackagePath,
+    serviceName: metadata.serviceName || normalizedServiceName,
+    serviceVersion: metadata.serviceVersion || imageTag || deployForm.serviceVersion,
+    imageName: imageName || deployForm.imageName,
+    imageTag: imageTag || deployForm.imageTag,
+    containerName: normalizedServiceName,
+    containerPort: Number(metadata.servicePort || deployForm.containerPort || packageForm.servicePort || 8080),
+  }
+}
+
+/**
+ * 将部署表单整理成主进程可执行的 payload。
+ */
+function toDeployPayload() {
+  return {
+    localPackagePath: deployForm.localPackagePath,
+    serviceName: deployForm.serviceName,
+    serviceVersion: deployForm.serviceVersion,
+    imageName: deployForm.imageName,
+    imageTag: deployForm.imageTag,
+    containerName: deployForm.containerName,
+    hostPort: Number(deployForm.hostPort || 0),
+    containerPort: Number(deployForm.containerPort || 0),
+    remoteBaseDir: deployForm.remoteBaseDir,
+    remotePackageDir: deployForm.remotePackageDir,
+    restartPolicy: deployForm.restartPolicy,
+    envVars: parseEnvText(deployForm.envText),
+    extraArgs: deployForm.extraArgs,
+    containerConflictStrategy: deployForm.containerConflictStrategy,
+    imageCleanupStrategy: deployForm.imageCleanupStrategy,
+    directoryPermissionMode: deployForm.directoryPermissionMode,
+  }
+}
+
+/**
+ * 将多行 KEY=VALUE 文本解析为结构化环境变量。
+ */
+function parseEnvText(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const index = line.indexOf('=')
+      return {
+        key: index >= 0 ? line.slice(0, index).trim() : line.trim(),
+        value: index >= 0 ? line.slice(index + 1).trim() : '',
+      }
+    })
+    .filter((item) => item.key)
+}
+
+function escapeRegExp(value) {
+  return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
  * 对外暴露工作区会话。
  * 这是连接页、命令页、历史页和侧边栏共享状态的唯一入口。
  */
@@ -801,9 +1277,13 @@ export function useWorkspaceSession() {
   return {
     form,
     packageForm,
+    deployForm,
     packagePreview,
     packageResult,
+    deployPreview,
+    deployResult,
     isBuildingPackage,
+    isDeploying,
     result,
     commandResult,
     commandText,
@@ -811,6 +1291,7 @@ export function useWorkspaceSession() {
     commandRuns,
     deployments,
     activeServerId,
+    pinnedServerId,
     storageInfo,
     isTesting,
     isExecutingCommand,
@@ -822,18 +1303,27 @@ export function useWorkspaceSession() {
     needsRetest,
     canExecuteCommand,
     canBuildImagePackage,
+    canDeploy,
     commandHint,
     packageHint,
+    deployHint,
     loadStoredData,
     selectJarFile,
+    selectDeployPackageFile,
     refreshPackagePreview,
+    refreshDeployPreview,
     buildImagePackage,
+    runDeployment,
+    openImagePackageDirectory,
     recordImagePackage,
+    recordRemoteDeployment,
     saveCurrentServer,
+    pinServer,
     selectSavedServer,
     updateForm,
     updateCommandText,
     updatePackageForm,
+    updateDeployForm,
     testConnection,
     executeCommand,
     selectPrivateKeyFile,

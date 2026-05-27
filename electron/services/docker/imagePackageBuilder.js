@@ -293,9 +293,11 @@ function escapeDockerEnv(value) {
 }
 
 function normalizeJavaVersion(value) {
-  const version = String(value || DEFAULT_JAVA_VERSION).trim()
+  const version = String(value || DEFAULT_JAVA_VERSION)
+    .trim()
+    .replace(/^java\s*/i, '')
 
-  return version === '21' ? '21' : '17'
+  return /^[0-9][0-9._-]*$/.test(version) ? version : DEFAULT_JAVA_VERSION
 }
 
 function normalizeUserName(value) {
@@ -308,14 +310,10 @@ function normalizeUserName(value) {
   return userName || 'spring'
 }
 
-function buildDefaultBaseImage(javaVersion, useNonRootUser) {
+function buildDefaultBaseImage(javaVersion) {
   const version = normalizeJavaVersion(javaVersion)
 
-  if (version === '21') {
-    return useNonRootUser ? 'eclipse-temurin:21-jre-alpine' : 'eclipse-temurin:21-jre-alpine'
-  }
-
-  return DEFAULT_BASE_IMAGE
+  return `eclipse-temurin:${version}-jre-alpine`
 }
 
 function appendLog(logs, message) {

@@ -23,9 +23,14 @@ defineProps({
     type: String,
     default: '',
   },
+  // 当前被设为默认启动目标的服务器 id。
+  pinnedServerId: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['selectServer'])
+const emit = defineEmits(['selectServer', 'pinServer'])
 
 const route = useRoute()
 const router = useRouter()
@@ -33,6 +38,7 @@ const router = useRouter()
 // 左侧主导航。routeName 对应 src/router/index.js 中的路由 name。
 const navigationItems = [
   { routeName: 'servers', label: '服务器' },
+  { routeName: 'deploy', label: '远程部署' },
   { routeName: 'package', label: '镜像打包' },
   { routeName: 'commands', label: '命令' },
   { routeName: 'history', label: '部署记录' },
@@ -74,26 +80,44 @@ function navigate(routeName) {
     <section class="server-list" aria-label="已保存服务器">
       <p class="server-list-title">已保存服务器</p>
 
-      <button
+      <div
         v-for="server in servers"
         :key="server.id"
-        class="server-row server-row-button"
+        class="server-row"
         :class="{ selected: activeServerId === server.id }"
-        type="button"
-        @click="emit('selectServer', server.id)"
       >
-        <span
-          class="status-dot"
-          :class="{
-            connected: server.lastStatus === 'connected',
-            failed: server.lastStatus === 'failed',
-          }"
-        ></span>
-        <div>
-          <strong>{{ server.name }}</strong>
-          <small>{{ server.host }}:{{ server.port }}</small>
-        </div>
-      </button>
+        <button
+          class="server-row-main server-row-button"
+          :class="{ selected: activeServerId === server.id }"
+          type="button"
+          @click="emit('selectServer', server.id)"
+        >
+          <span
+            class="status-dot"
+            :class="{
+              connected: server.lastStatus === 'connected',
+              failed: server.lastStatus === 'failed',
+            }"
+          ></span>
+          <div class="server-row-copy">
+            <div class="server-row-title">
+              <strong>{{ server.name }}</strong>
+              <span v-if="pinnedServerId === server.id" class="server-tag">默认</span>
+            </div>
+            <small>{{ server.host }}:{{ server.port }}</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="server-pin-button"
+          :class="{ active: pinnedServerId === server.id }"
+          :aria-pressed="pinnedServerId === server.id"
+          @click.stop="emit('pinServer', server.id)"
+        >
+          {{ pinnedServerId === server.id ? '取消置顶' : '置顶' }}
+        </button>
+      </div>
 
       <div v-if="!servers.length" class="server-row selected">
         <span class="status-dot"></span>

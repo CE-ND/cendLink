@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import CommandsView from '../features/commands/views/CommandsView.vue'
 import ServersView from '../features/connections/views/ServersView.vue'
+import DeploymentView from '../features/deploy/views/DeploymentView.vue'
 import ImagePackageView from '../features/docker/views/ImagePackageView.vue'
 import DeployHistoryView from '../features/history/views/DeployHistoryView.vue'
 import SettingsView from '../features/settings/views/SettingsView.vue'
@@ -21,6 +22,15 @@ const routes = [
         meta: {
           eyebrow: 'SSH Connection',
           title: '连接测试',
+        },
+      },
+      {
+        path: 'deploy',
+        name: 'deploy',
+        component: DeploymentView,
+        meta: {
+          eyebrow: 'Remote Deploy',
+          title: '远程部署',
         },
       },
       {

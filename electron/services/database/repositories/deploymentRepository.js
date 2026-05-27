@@ -19,6 +19,9 @@ export async function recordImagePackage(input = {}) {
         status,
         artifact_name,
         deploy_path,
+        remote_package_path,
+        run_command,
+        metadata_json,
         started_at,
         finished_at,
         duration_ms,
@@ -27,7 +30,7 @@ export async function recordImagePackage(input = {}) {
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
   ).run(
     normalized.id,
@@ -36,6 +39,9 @@ export async function recordImagePackage(input = {}) {
     normalized.status,
     normalized.artifactName,
     normalized.deployPath,
+    normalized.remotePackagePath,
+    normalized.runCommand,
+    normalized.metadataJson,
     normalized.startedAt,
     normalized.finishedAt,
     normalized.durationMs,
@@ -46,6 +52,92 @@ export async function recordImagePackage(input = {}) {
   )
 
   recordDeploymentStep(db, normalized, now)
+
+  return getDeployment(normalized.id)
+}
+
+/**
+ * 保存一次真实远程部署记录。
+ * 会同时写入 deployments 主记录和 deployment_steps 步骤明细。
+ */
+export async function recordRemoteDeployment(input = {}) {
+  const db = await getDatabase()
+  const now = new Date().toISOString()
+  const normalized = normalizeRemoteDeploymentInput(input, now)
+
+  db.prepare(
+    `
+      INSERT INTO deployments (
+        id,
+        project_id,
+        server_id,
+        status,
+        artifact_name,
+        deploy_path,
+        remote_package_path,
+        run_command,
+        metadata_json,
+        started_at,
+        finished_at,
+        duration_ms,
+        error_summary,
+        log_file_path,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+  ).run(
+    normalized.id,
+    normalized.projectId,
+    normalized.serverId,
+    normalized.status,
+    normalized.artifactName,
+    normalized.deployPath,
+    normalized.remotePackagePath,
+    normalized.runCommand,
+    normalized.metadataJson,
+    normalized.startedAt,
+    normalized.finishedAt,
+    normalized.durationMs,
+    normalized.errorSummary,
+    normalized.logFilePath,
+    normalized.createdAt,
+    normalized.updatedAt,
+  )
+
+  for (const step of normalized.steps) {
+    db.prepare(
+      `
+        INSERT INTO deployment_steps (
+          id,
+          deployment_id,
+          step_order,
+          name,
+          status,
+          command,
+          exit_code,
+          started_at,
+          finished_at,
+          duration_ms,
+          message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      randomUUID(),
+      normalized.id,
+      step.stepOrder,
+      step.name,
+      step.status,
+      step.command,
+      step.exitCode,
+      step.startedAt,
+      step.finishedAt,
+      step.durationMs,
+      step.message,
+    )
+  }
 
   return getDeployment(normalized.id)
 }
@@ -93,6 +185,21 @@ function normalizeImagePackageInput(input, now) {
     status,
     artifactName,
     deployPath,
+    remotePackagePath: '',
+    runCommand: '',
+    metadataJson: JSON.stringify({
+      recordType: 'image-package',
+      packageFileName: input.packageFileName || '',
+      packagePath: input.packagePath || '',
+      imageRef: input.imageRef || '',
+      serviceName: input.serviceName || '',
+      serviceVersion: input.serviceVersion || '',
+      servicePort: input.servicePort || 0,
+      javaVersion: input.javaVersion || '',
+      baseImage: input.baseImage || '',
+      useNonRootUser: Boolean(input.useNonRootUser),
+      appUser: input.appUser || '',
+    }),
     startedAt: input.startedAt ? String(input.startedAt) : new Date(Date.now() - durationMs).toISOString(),
     finishedAt: input.finishedAt ? String(input.finishedAt) : now,
     durationMs: Number.isFinite(durationMs) ? durationMs : 0,
@@ -103,6 +210,65 @@ function normalizeImagePackageInput(input, now) {
     stepMessage: input.ok
       ? `镜像包生成成功: ${input.imageRef || artifactName}`
       : String(input.message || '镜像包生成失败'),
+  }
+}
+
+function normalizeRemoteDeploymentInput(input, now) {
+  const durationMs = Number(input.durationMs || 0)
+  const steps = normalizeDeploymentSteps(input.steps)
+  const runCommand = String(input.runCommand || '').trim()
+  const cleanupCommand = String(input.cleanupCommand || '').trim()
+  const remoteReleaseDir = String(input.remoteReleaseDir || '').trim()
+  const remotePackagePath = String(input.remotePackagePath || '').trim()
+  const artifactName = String(input.imageRef || input.containerName || input.packageFileName || 'remote-deployment')
+  const deployPath = remoteReleaseDir || String(input.remotePackagePath || '').trim()
+  const cleanupSummary = String(input.cleanupSummary || '').trim()
+  const errorSummary = input.ok
+    ? cleanupSummary || ''
+    : String(input.message || input.errorSummary || '远程部署失败')
+
+  return {
+    id: String(input.id || '').trim() || randomUUID(),
+    projectId: String(input.imageRef || input.containerName || artifactName),
+    serverId: input.serverId ? String(input.serverId) : null,
+    status: input.ok ? 'deploy_success' : 'deploy_failed',
+    artifactName,
+    deployPath,
+    remotePackagePath,
+    runCommand,
+    metadataJson: JSON.stringify({
+      recordType: 'remote-deployment',
+      localPackagePath: input.localPackagePath || '',
+      remotePackagePath,
+      remoteReleaseDir,
+      imageRef: input.imageRef || '',
+      containerName: input.containerName || '',
+      runCommand,
+      cleanupCommand,
+      cleanupSummary,
+    }),
+    startedAt: input.startedAt ? String(input.startedAt) : new Date(Date.now() - durationMs).toISOString(),
+    finishedAt: input.finishedAt ? String(input.finishedAt) : now,
+    durationMs: Number.isFinite(durationMs) ? durationMs : 0,
+    errorSummary,
+    logFilePath: '',
+    createdAt: now,
+    updatedAt: now,
+    steps: steps.length
+      ? steps
+      : [
+          {
+            stepOrder: 1,
+            name: '远程部署',
+            status: input.ok ? 'success' : 'failed',
+            command: runCommand || cleanupCommand || 'docker deployment',
+            exitCode: input.ok ? 0 : 1,
+            startedAt: input.startedAt ? String(input.startedAt) : now,
+            finishedAt: input.finishedAt ? String(input.finishedAt) : now,
+            durationMs: Number.isFinite(durationMs) ? durationMs : 0,
+            message: input.ok ? '部署成功' : errorSummary,
+          },
+        ],
   }
 }
 
@@ -139,6 +305,24 @@ function recordDeploymentStep(db, deployment, now) {
   )
 }
 
+function normalizeDeploymentSteps(input) {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input.map((step, index) => ({
+    stepOrder: index + 1,
+    name: String(step?.name || `步骤 ${index + 1}`),
+    status: String(step?.status || 'unknown'),
+    command: String(step?.command || ''),
+    exitCode: Number.isInteger(step?.exitCode) ? step.exitCode : step?.status === 'success' ? 0 : 1,
+    startedAt: step?.startedAt ? String(step.startedAt) : null,
+    finishedAt: step?.finishedAt ? String(step.finishedAt) : null,
+    durationMs: Number(step?.durationMs || 0),
+    message: String(step?.message || ''),
+  }))
+}
+
 function mapDeploymentRow(row) {
   return {
     id: row.id,
@@ -152,7 +336,18 @@ function mapDeploymentRow(row) {
     durationMs: row.duration_ms,
     errorSummary: row.error_summary,
     logFilePath: row.log_file_path,
+    remotePackagePath: row.remote_package_path || '',
+    runCommand: row.run_command || '',
+    metadata: parseMetadata(row.metadata_json),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  }
+}
+
+function parseMetadata(value) {
+  try {
+    return JSON.parse(String(value || '{}'))
+  } catch {
+    return {}
   }
 }

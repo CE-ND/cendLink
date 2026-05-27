@@ -15,7 +15,9 @@ const {
   hasElectronBridge,
   savedServers,
   activeServerId,
+  pinnedServerId,
   loadStoredData,
+  pinServer,
   selectSavedServer,
 } = useWorkspaceSession()
 
@@ -40,6 +42,8 @@ onMounted(() => {
       :server-host="form.host"
       :servers="savedServers"
       :active-server-id="activeServerId"
+      :pinned-server-id="pinnedServerId"
+      @pin-server="pinServer"
       @select-server="selectSavedServer"
     />
 

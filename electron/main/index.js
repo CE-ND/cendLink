@@ -1,6 +1,7 @@
 import electron from 'electron'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { registerDeploymentHandlers } from '../ipc/deployment.handlers.js'
 import { registerDockerHandlers } from '../ipc/docker.handlers.js'
 import { registerSshHandlers } from '../ipc/ssh.handlers.js'
 import { registerStorageHandlers } from '../ipc/storage.handlers.js'
@@ -55,6 +56,7 @@ app.whenReady().then(async () => {
   // 初始化顺序：先准备本地数据库，再注册 IPC，最后创建窗口。
   Menu.setApplicationMenu(null)
   await initializeDatabase()
+  registerDeploymentHandlers(ipcMain)
   registerDockerHandlers(ipcMain)
   registerSshHandlers(ipcMain)
   registerStorageHandlers(ipcMain)

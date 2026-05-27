@@ -19,6 +19,20 @@ const api = {
     buildImagePackage(config) {
       return ipcRenderer.invoke('docker:build-image-package', config)
     },
+    openImagePackageDirectory(packagePath = '') {
+      return ipcRenderer.invoke('docker:open-image-package-directory', packagePath)
+    },
+  },
+  deployment: {
+    selectPackageFile() {
+      return ipcRenderer.invoke('deployment:select-package-file')
+    },
+    preview(config) {
+      return ipcRenderer.invoke('deployment:preview', config)
+    },
+    run(connection, config) {
+      return ipcRenderer.invoke('deployment:run', { connection, config })
+    },
   },
   // SSH 相关能力：连接测试、执行命令、选择本地私钥文件。
   ssh: {
@@ -57,6 +71,9 @@ const api = {
     },
     recordImagePackage(imagePackage) {
       return ipcRenderer.invoke('history:record-image-package', imagePackage)
+    },
+    recordRemoteDeployment(deployment) {
+      return ipcRenderer.invoke('history:record-remote-deployment', deployment)
     },
   },
   // 应用设置键值存储，value 会以 JSON 形式写入数据库。

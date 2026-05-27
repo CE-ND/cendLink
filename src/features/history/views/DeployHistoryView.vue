@@ -24,13 +24,16 @@ const { deployments } = useWorkspaceSession()
       <article v-for="item in deployments" :key="item.id" class="history-row">
         <div>
           <strong>{{ item.artifactName || item.projectId }}</strong>
-          <small>{{ item.deployPath || '本地镜像包' }} · {{ item.createdAt }}</small>
+          <small>
+            {{ item.deployPath || '本地镜像包' }} · {{ item.createdAt }}
+            <template v-if="item.errorSummary"> · {{ item.errorSummary }}</template>
+          </small>
         </div>
         <span
           class="state-pill"
           :class="{
-            success: item.status === 'package_success' || item.status === 'success',
-            failed: item.status === 'package_failed' || item.status === 'failed',
+            success: item.status === 'package_success' || item.status === 'success' || item.status === 'deploy_success',
+            failed: item.status === 'package_failed' || item.status === 'failed' || item.status === 'deploy_failed',
           }"
         >
           {{ item.status }}
