@@ -1,28 +1,40 @@
 import { computed, reactive, ref } from 'vue'
+import {
+  BUILTIN_DOCKERFILE_TEMPLATES,
+  DEFAULT_DOCKERFILE_TEMPLATE_ID,
+  createDockerfileTemplateText,
+  getDockerfileTemplateById,
+  getDockerfileTemplateDefaults,
+  parseDockerfileText,
+} from '../../../shared/dockerfileTemplates.js'
 
 // 渲染进程共享会话状态。各个页面通过它复用 SSH 上下文，避免切页后状态丢失。
-const form = reactive({
-  // 服务器显示名，保存到本地列表和历史记录中。
-  name: '默认服务器',
-  // SSH 服务器地址，可以是 IP 或域名。
-  host: '',
-  // SSH 端口，默认 22。
-  port: 22,
-  // SSH 登录用户名。
-  username: 'root',
-  // 登录方式：password 表示密码；privateKey 表示 PEM/SSH 私钥文件。
-  authType: 'password',
-  // 密码登录使用的明文密码；未勾选记住密码时不会写入数据库。
-  password: '',
-  // 是否允许把 password 用 safeStorage 加密后保存。
-  rememberPassword: false,
-  // PEM/SSH 私钥文件路径；只保存路径，不保存私钥内容。
-  privateKeyPath: '',
-  // 私钥口令，当前只用于本次连接，不做持久化。
-  passphrase: '',
-  // SSH 连接超时时间，单位毫秒。
-  timeoutMs: 10000,
-})
+function createDefaultServerForm() {
+  return {
+    // 服务器显示名，保存到本地列表和历史记录中。
+    name: '默认服务器',
+    // SSH 服务器地址，可以是 IP 或域名。
+    host: '',
+    // SSH 端口，默认 22。
+    port: 22,
+    // SSH 登录用户名。
+    username: 'root',
+    // 登录方式：password 表示密码；privateKey 表示 PEM/SSH 私钥文件。
+    authType: 'password',
+    // 密码登录使用的明文密码；未勾选记住密码时不会写入数据库。
+    password: '',
+    // 是否允许把 password 用 safeStorage 加密后保存。
+    rememberPassword: false,
+    // PEM/SSH 私钥文件路径；只保存路径，不保存私钥内容。
+    privateKeyPath: '',
+    // 私钥口令，当前只用于本次连接，不做持久化。
+    passphrase: '',
+    // SSH 连接超时时间，单位毫秒。
+    timeoutMs: 10000,
+  }
+}
+
+const form = reactive(createDefaultServerForm())
 
 // 最近一次连接测试结果。
 const result = ref(null)
@@ -30,17 +42,24 @@ const result = ref(null)
 const commandResult = ref(null)
 // 命令输入框内容。
 const commandText = ref('')
+const defaultDockerfileTemplate = getDockerfileTemplateDefaults(DEFAULT_DOCKERFILE_TEMPLATE_ID)
 // Jar 打镜像包页的表单对象。
 const packageForm = reactive({
   jarPath: '',
   serviceName: 'demo-service',
   serviceVersion: '1.0.0',
   servicePort: 8080,
-  javaVersion: '17',
-  javaOpts: '-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200',
-  baseImage: 'eclipse-temurin:17-jre-alpine',
-  useNonRootUser: true,
-  appUser: 'spring',
+  javaVersion: defaultDockerfileTemplate.javaVersion,
+  javaOpts: defaultDockerfileTemplate.javaOpts,
+  baseImage: defaultDockerfileTemplate.baseImage,
+  baseImageFamily: defaultDockerfileTemplate.baseImageFamily,
+  useNonRootUser: defaultDockerfileTemplate.useNonRootUser,
+  appUser: defaultDockerfileTemplate.appUser,
+  dockerfileTemplateId: defaultDockerfileTemplate.templateId,
+  dockerfileTemplateName: defaultDockerfileTemplate.templateName,
+  dockerfileTemplateDescription: defaultDockerfileTemplate.templateDescription,
+  dockerfileSourceType: defaultDockerfileTemplate.sourceType,
+  dockerfileTemplateText: '',
 })
 // 远程部署页的表单对象。
 const deployForm = reactive({
@@ -82,12 +101,18 @@ const isExecutingCommand = ref(false)
 const isLoadingStoredData = ref(false)
 // 保存服务器配置进行中状态。
 const isSavingServer = ref(false)
+// 保存自定义 Dockerfile 模板进行中状态。
+const isSavingDockerfileTemplate = ref(false)
+// 删除部署记录进行中状态。
+const deletingDeploymentIds = ref([])
 // 本地数据库中已保存的服务器列表。
 const savedServers = ref([])
 // 本地数据库中最近的命令执行记录。
 const commandRuns = ref([])
 // 本地数据库中最近的部署/镜像包记录。
 const deployments = ref([])
+// 用户保存的自定义 Dockerfile 模板。内置模板来自共享模块，不写入数据库。
+const savedDockerfileTemplates = ref([])
 // 当前选中的已保存服务器 id；空字符串代表尚未保存或未选中。
 const activeServerId = ref('')
 // 当前被设为默认启动目标的服务器 id。
@@ -123,6 +148,13 @@ const hasElectronBridge = computed(() => {
   )
 })
 
+const hasDeploymentBridge = computed(() => {
+  const bridge = getStorageBridge()
+  const deployment = bridge?.deployment
+
+  return Boolean(deployment?.selectPackageFile && deployment?.preview && deployment?.run)
+})
+
 const hasStorageBridge = computed(() => {
   const bridge = getStorageBridge()
 
@@ -132,9 +164,51 @@ const hasStorageBridge = computed(() => {
       bridge?.history?.listDeployments &&
       bridge?.history?.recordCommandRun &&
       bridge?.history?.recordImagePackage &&
-      bridge?.history?.recordRemoteDeployment,
+      bridge?.history?.recordRemoteDeployment &&
+      bridge?.history?.deleteDeployment,
   )
 })
+
+const hasDockerfileTemplateBridge = computed(() => {
+  const bridge = getStorageBridge()
+
+  return Boolean(
+    bridge?.dockerfileTemplates?.list &&
+      bridge?.dockerfileTemplates?.save &&
+      bridge?.dockerfileTemplates?.delete,
+  )
+})
+
+const dockerfileTemplateOptions = computed(() => {
+  const options = [...BUILTIN_DOCKERFILE_TEMPLATES, ...savedDockerfileTemplates.value]
+  const hasCurrentTemplate = options.some((template) => template.id === packageForm.dockerfileTemplateId)
+
+  if (!hasCurrentTemplate && packageForm.dockerfileSourceType === 'custom') {
+    return [
+      {
+        id: packageForm.dockerfileTemplateId || 'imported-custom',
+        name: packageForm.dockerfileTemplateName || '当前导入 Dockerfile',
+        description: packageForm.dockerfileTemplateDescription || '未保存的导入内容',
+        sourceType: 'custom',
+        templateText: packageForm.dockerfileTemplateText,
+      },
+      ...options,
+    ]
+  }
+
+  return options
+})
+
+const selectedDockerfileTemplate = computed(() => {
+  return (
+    dockerfileTemplateOptions.value.find(
+      (template) => template.id === packageForm.dockerfileTemplateId,
+    ) || dockerfileTemplateOptions.value[0]
+  )
+})
+
+// 当前是否处于新建服务器模式。没有 activeServerId 时，保存会创建一条新记录。
+const isCreatingServer = computed(() => !activeServerId.value)
 
 // 当前连接配置的序列化快照。任何影响 SSH 连接的字段变化都会改变该值。
 const currentConnectionSnapshot = computed(() => {
@@ -175,7 +249,9 @@ const canBuildImagePackage = computed(() => {
       packageForm.serviceName.trim() &&
       packageForm.serviceVersion.trim() &&
       Number.isInteger(Number(packageForm.servicePort || 0)) &&
-      Number(packageForm.servicePort || 0) > 0,
+      Number(packageForm.servicePort || 0) > 0 &&
+      (packageForm.dockerfileSourceType !== 'custom' ||
+        Boolean(packageForm.dockerfileTemplateText?.trim())),
   )
 })
 
@@ -244,6 +320,10 @@ const packageHint = computed(() => {
 
 // 部署页提示。
 const deployHint = computed(() => {
+  if (!hasDeploymentBridge.value) {
+    return '部署模块还没有挂到当前 Electron 进程上，请完全关闭桌面窗口后重新执行 npm run dev:electron。'
+  }
+
   if (!hasElectronBridge.value) {
     return '请通过 Electron 模式启动应用后再执行远程部署。'
   }
@@ -295,6 +375,181 @@ function updatePackageForm(nextValue) {
 }
 
 /**
+ * 切换 Dockerfile 模板，并把模板推荐的运行环境回填到打包表单。
+ */
+function selectDockerfileTemplate(templateId) {
+  const selected = dockerfileTemplateOptions.value.find((template) => template.id === templateId)
+
+  if (!selected) {
+    logs.value.push(logLine('未找到要切换的 Dockerfile 模板'))
+    return
+  }
+
+  const builtin = getDockerfileTemplateById(selected.id)
+
+  if (builtin) {
+    const defaults = getDockerfileTemplateDefaults(selected.id)
+
+    updatePackageForm({
+      javaVersion: defaults.javaVersion,
+      javaOpts: defaults.javaOpts,
+      baseImage: defaults.baseImage,
+      baseImageFamily: defaults.baseImageFamily,
+      useNonRootUser: defaults.useNonRootUser,
+      appUser: defaults.appUser,
+      dockerfileTemplateId: defaults.templateId,
+      dockerfileTemplateName: defaults.templateName,
+      dockerfileTemplateDescription: defaults.templateDescription,
+      dockerfileSourceType: defaults.sourceType,
+      dockerfileTemplateText: '',
+    })
+    logs.value.push(logLine(`已切换 Dockerfile 模板: ${defaults.templateName}`))
+    return
+  }
+
+  const parsed = readTemplateMetadata(selected)
+
+  updatePackageForm({
+    servicePort: Number(parsed.servicePort || packageForm.servicePort || 8080),
+    javaVersion: parsed.javaVersion || packageForm.javaVersion,
+    javaOpts: parsed.javaOpts || packageForm.javaOpts,
+    baseImage: parsed.baseImage || packageForm.baseImage,
+    baseImageFamily: parsed.baseImageFamily || packageForm.baseImageFamily,
+    useNonRootUser: parsed.useNonRootUser,
+    appUser: parsed.appUser || packageForm.appUser,
+    dockerfileTemplateId: selected.id,
+    dockerfileTemplateName: selected.name,
+    dockerfileTemplateDescription: selected.description || parsed.templateDescription || '',
+    dockerfileSourceType: selected.sourceType || 'custom',
+    dockerfileTemplateText: selected.templateText || '',
+  })
+  logs.value.push(logLine(`已切换 Dockerfile 模板: ${selected.name}`))
+}
+
+/**
+ * 识别用户粘贴的 Dockerfile，并把可识别字段回填到打包表单。
+ */
+function applyImportedDockerfileTemplate(dockerfileText, templateName = '') {
+  const rawText = String(dockerfileText || '').trim()
+
+  if (!rawText) {
+    logs.value.push(logLine('请先粘贴 Dockerfile 内容'))
+    return null
+  }
+
+  const parsed = parseDockerfileText(rawText)
+  const templateText = createDockerfileTemplateText(rawText, parsed)
+  const name = String(templateName || '').trim() || `导入 · ${parsed.templateName || 'Dockerfile'}`
+
+  updatePackageForm({
+    servicePort: Number(parsed.servicePort || packageForm.servicePort || 8080),
+    javaVersion: parsed.javaVersion || packageForm.javaVersion,
+    javaOpts: parsed.javaOpts || packageForm.javaOpts,
+    baseImage: parsed.baseImage || packageForm.baseImage,
+    baseImageFamily: parsed.baseImageFamily || packageForm.baseImageFamily,
+    useNonRootUser: parsed.useNonRootUser,
+    appUser: parsed.appUser || packageForm.appUser,
+    dockerfileTemplateId: 'imported-custom',
+    dockerfileTemplateName: name,
+    dockerfileTemplateDescription: '来自导入识别的未保存 Dockerfile',
+    dockerfileSourceType: 'custom',
+    dockerfileTemplateText: templateText,
+  })
+  logs.value.push(logLine(`已识别并应用 Dockerfile: ${parsed.templateName}`))
+
+  return parsed
+}
+
+/**
+ * 保存当前导入的 Dockerfile 为可复用模板。
+ */
+async function saveDockerfileTemplate(input = {}) {
+  const bridge = getStorageBridge()
+  const rawText = String(
+    input.templateText || packageForm.dockerfileTemplateText || packagePreview.value?.dockerfileText || '',
+  ).trim()
+
+  if (!bridge?.dockerfileTemplates?.save) {
+    logs.value.push(logLine('当前 Electron 进程还没有模板存储能力，请重启桌面窗口后再试'))
+    return null
+  }
+
+  if (!rawText) {
+    logs.value.push(logLine('保存模板前请先导入或生成 Dockerfile 内容'))
+    return null
+  }
+
+  const parsed = input.metadata || parseDockerfileText(rawText)
+  const templateText = createDockerfileTemplateText(rawText, parsed)
+  const templateMetadata = { ...parsed }
+  delete templateMetadata.rawText
+  const name = String(input.name || '').trim() || packageForm.dockerfileTemplateName || '自定义 Dockerfile'
+
+  isSavingDockerfileTemplate.value = true
+
+  try {
+    const saved = await bridge.dockerfileTemplates.save({
+      id: input.id,
+      name,
+      description: String(input.description || packageForm.dockerfileTemplateDescription || '').trim(),
+      sourceType: 'custom',
+      templateText,
+      baseImageFamily: parsed.baseImageFamily,
+      javaVersion: parsed.javaVersion,
+      javaOpts: parsed.javaOpts,
+      useNonRootUser: parsed.useNonRootUser,
+      appUser: parsed.appUser,
+      metadata: templateMetadata,
+    })
+
+    upsertSavedDockerfileTemplate(saved)
+    selectDockerfileTemplate(saved.id)
+    logs.value.push(logLine(`Dockerfile 模板已保存: ${saved.name}`))
+    return saved
+  } catch (error) {
+    logs.value.push(logLine(`保存 Dockerfile 模板失败: ${error?.message || error}`))
+    return null
+  } finally {
+    isSavingDockerfileTemplate.value = false
+  }
+}
+
+/**
+ * 删除一个用户自定义 Dockerfile 模板。
+ */
+async function deleteDockerfileTemplate(templateId) {
+  const bridge = getStorageBridge()
+  const targetId = String(templateId || '').trim()
+
+  if (!targetId || getDockerfileTemplateById(targetId)) {
+    return
+  }
+
+  if (!bridge?.dockerfileTemplates?.delete) {
+    logs.value.push(logLine('当前 Electron 进程还没有模板删除能力，请重启桌面窗口后再试'))
+    return
+  }
+
+  try {
+    const result = await bridge.dockerfileTemplates.delete(targetId)
+
+    if (result?.deleted) {
+      savedDockerfileTemplates.value = savedDockerfileTemplates.value.filter(
+        (template) => template.id !== targetId,
+      )
+
+      if (packageForm.dockerfileTemplateId === targetId) {
+        selectDockerfileTemplate(DEFAULT_DOCKERFILE_TEMPLATE_ID)
+      }
+
+      logs.value.push(logLine('Dockerfile 模板已删除'))
+    }
+  } catch (error) {
+    logs.value.push(logLine(`删除 Dockerfile 模板失败: ${error?.message || error}`))
+  }
+}
+
+/**
  * 更新部署表单，并刷新 docker run 预览。
  */
 function updateDeployForm(nextValue) {
@@ -337,6 +592,7 @@ async function loadStoredData() {
     deployments.value = deploymentRows
     pinnedServerId.value = String(defaultServerId || '')
     savedServers.value.sort(compareSavedServers)
+    await loadDockerfileTemplates()
     hydrateDeployFormFromHistory()
     hasLoadedStoredData.value = true
     logs.value.push(logLine(`本地数据目录已就绪: ${info.dataDir}`))
@@ -345,6 +601,24 @@ async function loadStoredData() {
     logs.value.push(logLine(`读取本地数据失败: ${error?.message || error}`))
   } finally {
     isLoadingStoredData.value = false
+  }
+}
+
+/**
+ * 从本地数据库读取用户保存的 Dockerfile 模板。
+ */
+async function loadDockerfileTemplates() {
+  const bridge = getStorageBridge()
+
+  if (!bridge?.dockerfileTemplates?.list) {
+    return
+  }
+
+  try {
+    const templates = await bridge.dockerfileTemplates.list()
+    savedDockerfileTemplates.value = Array.isArray(templates) ? templates : []
+  } catch (error) {
+    logs.value.push(logLine(`读取 Dockerfile 模板失败: ${error?.message || error}`))
   }
 }
 
@@ -585,6 +859,19 @@ async function saveCurrentServer() {
   } finally {
     isSavingServer.value = false
   }
+}
+
+/**
+ * 切换到新建服务器模式，并清空当前连接结果。
+ * 保存时没有 activeServerId，主进程会把它当作新增服务器处理。
+ */
+function createNewServer() {
+  activeServerId.value = ''
+  updateForm(createDefaultServerForm())
+  result.value = null
+  commandResult.value = null
+  lastTestedSnapshot.value = ''
+  logs.value.push(logLine('已进入新建服务器模式'))
 }
 
 /**
@@ -981,8 +1268,15 @@ async function recordImagePackage(response) {
       servicePort: response.servicePort,
       javaVersion: response.javaVersion,
       baseImage: response.baseImage,
+      baseImageFamily: response.baseImageFamily,
       useNonRootUser: response.useNonRootUser,
       appUser: response.appUser,
+      dockerfileTemplateId: response.dockerfileTemplateId,
+      dockerfileTemplateName: response.dockerfileTemplateName,
+      dockerfileTemplateDescription: response.dockerfileTemplateDescription,
+      dockerfileSourceType: response.dockerfileSourceType,
+      dockerfileTemplateText: response.dockerfileTemplateText,
+      dockerfileText: response.dockerfileText,
       durationMs: response.durationMs,
     })
   } catch (error) {
@@ -1024,6 +1318,40 @@ async function recordRemoteDeployment(response) {
   }
 
   return null
+}
+
+/**
+ * 删除一条部署/镜像包记录，并同步更新本地列表。
+ */
+async function deleteDeploymentRecord(deploymentId) {
+  const bridge = getStorageBridge()
+  const normalizedId = String(deploymentId || '')
+
+  if (!normalizedId || !bridge?.history?.deleteDeployment) {
+    return
+  }
+
+  if (deletingDeploymentIds.value.includes(normalizedId)) {
+    return
+  }
+
+  deletingDeploymentIds.value = [...deletingDeploymentIds.value, normalizedId]
+
+  try {
+    const result = await bridge.history.deleteDeployment(normalizedId)
+
+    if (result?.deleted) {
+      deployments.value = deployments.value.filter((item) => item.id !== normalizedId)
+      logs.value.push(logLine('已删除一条部署记录'))
+      return
+    }
+
+    logs.value.push(logLine('未找到要删除的部署记录'))
+  } catch (error) {
+    logs.value.push(logLine(`删除部署记录失败: ${error?.message || error}`))
+  } finally {
+    deletingDeploymentIds.value = deletingDeploymentIds.value.filter((item) => item !== normalizedId)
+  }
 }
 
 /**
@@ -1162,6 +1490,36 @@ function toDisplayLines(output) {
   return output.replace(/\r\n/g, '\n').split('\n')
 }
 
+function readTemplateMetadata(template) {
+  if (!template) {
+    return {}
+  }
+
+  if (template.metadata && Object.keys(template.metadata).length) {
+    return template.metadata
+  }
+
+  if (template.templateText) {
+    return parseDockerfileText(template.templateText)
+  }
+
+  return {}
+}
+
+function upsertSavedDockerfileTemplate(template) {
+  const index = savedDockerfileTemplates.value.findIndex((item) => item.id === template.id)
+
+  if (index >= 0) {
+    savedDockerfileTemplates.value.splice(index, 1, template)
+  } else {
+    savedDockerfileTemplates.value.unshift(template)
+  }
+
+  savedDockerfileTemplates.value.sort((left, right) => {
+    return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+  })
+}
+
 /**
  * 生成带时间前缀的日志行。
  */
@@ -1290,6 +1648,9 @@ export function useWorkspaceSession() {
     savedServers,
     commandRuns,
     deployments,
+    savedDockerfileTemplates,
+    dockerfileTemplateOptions,
+    selectedDockerfileTemplate,
     activeServerId,
     pinnedServerId,
     storageInfo,
@@ -1297,9 +1658,14 @@ export function useWorkspaceSession() {
     isExecutingCommand,
     isLoadingStoredData,
     isSavingServer,
+    isSavingDockerfileTemplate,
+    deletingDeploymentIds,
     logs,
     hasElectronBridge,
     hasStorageBridge,
+    hasDeploymentBridge,
+    hasDockerfileTemplateBridge,
+    isCreatingServer,
     needsRetest,
     canExecuteCommand,
     canBuildImagePackage,
@@ -1308,6 +1674,7 @@ export function useWorkspaceSession() {
     packageHint,
     deployHint,
     loadStoredData,
+    loadDockerfileTemplates,
     selectJarFile,
     selectDeployPackageFile,
     refreshPackagePreview,
@@ -1317,7 +1684,13 @@ export function useWorkspaceSession() {
     openImagePackageDirectory,
     recordImagePackage,
     recordRemoteDeployment,
+    deleteDeploymentRecord,
     saveCurrentServer,
+    selectDockerfileTemplate,
+    applyImportedDockerfileTemplate,
+    saveDockerfileTemplate,
+    deleteDockerfileTemplate,
+    createNewServer,
     pinServer,
     selectSavedServer,
     updateForm,

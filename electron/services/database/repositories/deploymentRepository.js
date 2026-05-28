@@ -172,6 +172,19 @@ export async function getDeployment(id) {
   return row ? mapDeploymentRow(row) : null
 }
 
+/**
+ * 删除一条部署/镜像包记录。
+ * deployment_steps 依赖外键级联自动删除。
+ */
+export async function deleteDeployment(id) {
+  const db = await getDatabase()
+  const result = db.prepare('DELETE FROM deployments WHERE id = ?').run(String(id || ''))
+
+  return {
+    deleted: result.changes > 0,
+  }
+}
+
 function normalizeImagePackageInput(input, now) {
   const status = input.ok ? 'package_success' : 'package_failed'
   const artifactName = String(input.packageFileName || input.imageRef || input.serviceName || '')
@@ -199,6 +212,13 @@ function normalizeImagePackageInput(input, now) {
       baseImage: input.baseImage || '',
       useNonRootUser: Boolean(input.useNonRootUser),
       appUser: input.appUser || '',
+      dockerfileTemplateId: input.dockerfileTemplateId || '',
+      dockerfileTemplateName: input.dockerfileTemplateName || '',
+      dockerfileTemplateDescription: input.dockerfileTemplateDescription || '',
+      dockerfileSourceType: input.dockerfileSourceType || '',
+      dockerfileTemplateText: input.dockerfileTemplateText || '',
+      dockerfileText: input.dockerfileText || '',
+      baseImageFamily: input.baseImageFamily || '',
     }),
     startedAt: input.startedAt ? String(input.startedAt) : new Date(Date.now() - durationMs).toISOString(),
     finishedAt: input.finishedAt ? String(input.finishedAt) : now,

@@ -1,8 +1,8 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 // 展示当前工作区的共享活动日志，并支持放大查看长日志。
-defineProps({
+const props = defineProps({
   // 已格式化的日志行，由 useWorkspaceSession 统一维护。
   lines: {
     type: Array,
@@ -12,6 +12,10 @@ defineProps({
 
 // 是否打开日志放大弹窗。
 const isExpanded = ref(false)
+// 常规日志面板滚动容器。
+const inlineLogRef = ref(null)
+// 放大弹窗日志滚动容器。
+const modalLogRef = ref(null)
 
 /**
  * 打开日志放大视图。
@@ -25,6 +29,17 @@ function openExpanded() {
  */
 function closeExpanded() {
   isExpanded.value = false
+}
+
+/**
+ * 将日志滚动到最新一行。
+ */
+function scrollToBottom(target) {
+  if (!target) {
+    return
+  }
+
+  target.scrollTop = target.scrollHeight
 }
 
 /**
@@ -43,6 +58,27 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleWindowKeydown)
 })
+
+watch(
+  () => props.lines.length,
+  async () => {
+    await nextTick()
+    scrollToBottom(inlineLogRef.value)
+
+    if (isExpanded.value) {
+      scrollToBottom(modalLogRef.value)
+    }
+  },
+)
+
+watch(isExpanded, async (expanded) => {
+  if (!expanded) {
+    return
+  }
+
+  await nextTick()
+  scrollToBottom(modalLogRef.value)
+})
 </script>
 
 <template>
@@ -54,7 +90,7 @@ onBeforeUnmount(() => {
       </div>
       <button class="terminal-action" type="button" @click="openExpanded">放大查看</button>
     </header>
-    <pre class="terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
+    <pre ref="inlineLogRef" class="terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
   </section>
 
   <teleport to="body">
@@ -74,7 +110,7 @@ onBeforeUnmount(() => {
           </div>
           <button class="terminal-action" type="button" @click="closeExpanded">关闭</button>
         </header>
-        <pre class="terminal-modal-body terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
+        <pre ref="modalLogRef" class="terminal-modal-body terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
       </section>
     </div>
   </teleport>

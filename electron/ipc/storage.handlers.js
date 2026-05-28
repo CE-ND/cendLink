@@ -10,10 +10,16 @@ import {
   recordCommandRun,
 } from '../services/database/repositories/commandRunRepository.js'
 import {
+  deleteDeployment,
   listDeployments,
   recordImagePackage,
   recordRemoteDeployment,
 } from '../services/database/repositories/deploymentRepository.js'
+import {
+  deleteDockerfileTemplate,
+  listDockerfileTemplates,
+  saveDockerfileTemplate,
+} from '../services/database/repositories/dockerfileTemplateRepository.js'
 import { getSetting, setSetting } from '../services/database/repositories/settingsRepository.js'
 import { decryptPassword, encryptPassword } from '../services/credential/passwordVault.js'
 
@@ -63,6 +69,22 @@ export function registerStorageHandlers(ipcMain) {
 
   ipcMain.handle('history:record-remote-deployment', async (_event, deployment) => {
     return recordRemoteDeployment(deployment)
+  })
+
+  ipcMain.handle('history:delete-deployment', async (_event, id) => {
+    return deleteDeployment(id)
+  })
+
+  ipcMain.handle('dockerfile-templates:list', async () => {
+    return listDockerfileTemplates()
+  })
+
+  ipcMain.handle('dockerfile-templates:save', async (_event, template) => {
+    return saveDockerfileTemplate(template)
+  })
+
+  ipcMain.handle('dockerfile-templates:delete', async (_event, id) => {
+    return deleteDockerfileTemplate(id)
   })
 
   ipcMain.handle('settings:get', async (_event, key, fallbackValue) => {

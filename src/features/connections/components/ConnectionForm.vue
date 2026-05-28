@@ -1,4 +1,6 @@
 <script setup>
+import { computed } from 'vue'
+
 // 收集 SSH 配置参数，并把用户操作意图抛给所属页面处理。
 const props = defineProps({
   // 服务器表单对象，对应 useWorkspaceSession.js 里的 form。
@@ -16,9 +18,16 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // 当前表单所处模式：create 表示新建服务器，edit 表示编辑已保存服务器。
+  mode: {
+    type: String,
+    default: 'create',
+  },
 })
 
-const emit = defineEmits(['update:modelValue', 'test', 'selectKey', 'save'])
+const emit = defineEmits(['update:modelValue', 'test', 'selectKey', 'save', 'create'])
+
+const isCreating = computed(() => props.mode === 'create')
 
 /**
  * 更新表单中的单个字段，并通过 v-model 把完整表单回传给父组件。
@@ -36,16 +45,24 @@ function updateField(field, value) {
     <div class="panel-header">
       <div>
         <p class="eyebrow">Server Profile</p>
-        <h3>服务器信息</h3>
+        <h3>{{ isCreating ? '新建服务器' : '服务器信息' }}</h3>
       </div>
       <div class="panel-actions">
         <button
           class="secondary-button"
           type="button"
           :disabled="busy || saving"
+          @click="emit('create')"
+        >
+          新建
+        </button>
+        <button
+          class="secondary-button"
+          type="button"
+          :disabled="busy || saving"
           @click="emit('save')"
         >
-          {{ saving ? '保存中...' : '保存服务器' }}
+          {{ saving ? '保存中...' : isCreating ? '保存新服务器' : '保存修改' }}
         </button>
         <button class="primary-button" type="submit" :disabled="busy || saving">
           {{ busy ? '测试中...' : '测试连接' }}

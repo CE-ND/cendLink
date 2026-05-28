@@ -30,7 +30,7 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['selectServer', 'pinServer'])
+const emit = defineEmits(['selectServer', 'pinServer', 'createServer'])
 
 const route = useRoute()
 const router = useRouter()
@@ -55,6 +55,17 @@ function navigate(routeName) {
 
   router.push({ name: routeName })
 }
+
+/**
+ * 打开服务器页并进入新建服务器模式。
+ */
+function createServer() {
+  emit('createServer')
+
+  if (route.name !== 'servers') {
+    router.push({ name: 'servers' })
+  }
+}
 </script>
 
 <template>
@@ -78,7 +89,10 @@ function navigate(routeName) {
     </nav>
 
     <section class="server-list" aria-label="已保存服务器">
-      <p class="server-list-title">已保存服务器</p>
+      <div class="server-list-header">
+        <p class="server-list-title">已保存服务器</p>
+        <button class="server-new-button" type="button" @click="createServer">新建</button>
+      </div>
 
       <div
         v-for="server in servers"

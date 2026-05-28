@@ -10,9 +10,11 @@ const {
   isTesting,
   isExecutingCommand,
   isSavingServer,
+  isCreatingServer,
   needsRetest,
   updateForm,
   saveCurrentServer,
+  createNewServer,
   testConnection,
   selectPrivateKeyFile,
 } = useWorkspaceSession()
@@ -24,7 +26,9 @@ const {
       :model-value="form"
       :busy="isTesting || isExecutingCommand"
       :saving="isSavingServer"
+      :mode="isCreatingServer ? 'create' : 'edit'"
       @update:model-value="updateForm"
+      @create="createNewServer"
       @select-key="selectPrivateKeyFile"
       @save="saveCurrentServer"
       @test="testConnection"

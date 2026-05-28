@@ -6,10 +6,12 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import zlib from 'node:zlib'
 import { imagePackagesDir, tempDir } from '../database/paths.js'
+import {
+  normalizeTemplateConfig,
+  renderDockerfileTemplate,
+  resolveDockerfileTemplate,
+} from '../../../src/shared/dockerfileTemplates.js'
 
-const DEFAULT_JAVA_VERSION = '17'
-const DEFAULT_BASE_IMAGE = 'eclipse-temurin:17-jre-alpine'
-const DEFAULT_JAVA_OPTS = '-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200'
 const MAX_LOG_CHARS = 80000
 
 /**
@@ -121,18 +123,18 @@ async function normalizeBuildInput(input) {
 }
 
 function normalizeBuildInputSync(input) {
-  const jarPath = String(input.jarPath || '').trim()
-  const serviceName = String(input.serviceName || '').trim()
-  const serviceVersion = String(input.serviceVersion || '').trim()
-  const servicePort = Number(input.servicePort || 0)
-  const javaVersion = normalizeJavaVersion(input.javaVersion)
+  const templateConfig = normalizeTemplateConfig(input)
+  const jarPath = templateConfig.jarPath
+  const serviceName = templateConfig.serviceName
+  const serviceVersion = templateConfig.serviceVersion
+  const servicePort = Number(templateConfig.servicePort || 0)
+  const javaVersion = templateConfig.javaVersion
   const imageName = normalizeImageName(serviceName)
   const imageTag = normalizeImageTag(serviceVersion)
-  const javaOpts = String(input.javaOpts || DEFAULT_JAVA_OPTS).trim() || DEFAULT_JAVA_OPTS
-  const useNonRootUser = input.useNonRootUser !== false
-  const appUser = normalizeUserName(input.appUser)
-  const baseImage =
-    String(input.baseImage || '').trim() || buildDefaultBaseImage(javaVersion, useNonRootUser)
+  const javaOpts = templateConfig.javaOpts
+  const useNonRootUser = templateConfig.useNonRootUser
+  const appUser = templateConfig.appUser
+  const baseImage = templateConfig.baseImage
 
   if (!jarPath) {
     throw new Error('请选择 Jar 包')
@@ -159,6 +161,7 @@ function normalizeBuildInputSync(input) {
   }
 
   return {
+    ...templateConfig,
     jarPath,
     serviceName,
     serviceVersion,
@@ -175,31 +178,9 @@ function normalizeBuildInputSync(input) {
 }
 
 function createDockerfile(config) {
-  const userBlock = config.useNonRootUser
-    ? `RUN addgroup -S ${config.appUser} && adduser -S ${config.appUser} -G ${config.appUser}
+  const template = resolveDockerfileTemplate(config.dockerfileTemplateId, config.dockerfileTemplateText)
 
-WORKDIR /app
-
-COPY --chown=${config.appUser}:${config.appUser} app.jar app.jar
-
-USER ${config.appUser}
-`
-    : `WORKDIR /app
-
-COPY app.jar app.jar
-`
-
-  return `FROM ${config.baseImage}
-
-${userBlock}
-
-ENV SERVER_PORT=${config.servicePort}
-ENV JAVA_OPTS="${escapeDockerEnv(config.javaOpts)}"
-
-EXPOSE ${config.servicePort}
-
-ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar --server.port=$SERVER_PORT"]
-`
+  return renderDockerfileTemplate(template, config)
 }
 
 function runCommand(command, args, options = {}) {
@@ -288,34 +269,6 @@ function toSafeFilePart(value) {
     .slice(0, 120)
 }
 
-function escapeDockerEnv(value) {
-  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
-function normalizeJavaVersion(value) {
-  const version = String(value || DEFAULT_JAVA_VERSION)
-    .trim()
-    .replace(/^java\s*/i, '')
-
-  return /^[0-9][0-9._-]*$/.test(version) ? version : DEFAULT_JAVA_VERSION
-}
-
-function normalizeUserName(value) {
-  const userName = String(value || 'spring')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/^[.-]+|[.-]+$/g, '')
-
-  return userName || 'spring'
-}
-
-function buildDefaultBaseImage(javaVersion) {
-  const version = normalizeJavaVersion(javaVersion)
-
-  return `eclipse-temurin:${version}-jre-alpine`
-}
-
 function appendLog(logs, message) {
   const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   logs.push(`[${time}] ${message}`)
@@ -344,17 +297,19 @@ function trimLogs(logs) {
 }
 
 function safeFailureConfig(input) {
-  const serviceName = String(input.serviceName || '').trim()
-  const serviceVersion = String(input.serviceVersion || '').trim()
-  const servicePort = Number(input.servicePort || 0)
-  const javaVersion = normalizeJavaVersion(input.javaVersion)
-  const useNonRootUser = input.useNonRootUser !== false
-  const appUser = normalizeUserName(input.appUser)
+  const templateConfig = normalizeTemplateConfig(input)
+  const serviceName = templateConfig.serviceName
+  const serviceVersion = templateConfig.serviceVersion
+  const servicePort = Number(templateConfig.servicePort || 0)
+  const javaVersion = templateConfig.javaVersion
+  const useNonRootUser = templateConfig.useNonRootUser
+  const appUser = templateConfig.appUser
   const imageName = normalizeImageName(serviceName)
   const imageTag = normalizeImageTag(serviceVersion)
 
   return {
-    jarPath: String(input.jarPath || '').trim(),
+    ...templateConfig,
+    jarPath: templateConfig.jarPath,
     serviceName,
     serviceVersion,
     servicePort: Number.isInteger(servicePort) ? servicePort : 0,
@@ -362,9 +317,8 @@ function safeFailureConfig(input) {
     imageName,
     imageTag,
     imageRef: imageName && imageTag ? `${imageName}:${imageTag}` : '',
-    javaOpts: String(input.javaOpts || DEFAULT_JAVA_OPTS).trim() || DEFAULT_JAVA_OPTS,
-    baseImage:
-      String(input.baseImage || '').trim() || buildDefaultBaseImage(javaVersion, useNonRootUser),
+    javaOpts: templateConfig.javaOpts,
+    baseImage: templateConfig.baseImage,
     useNonRootUser,
     appUser,
     jarName: input.jarPath ? path.basename(String(input.jarPath)) : '',

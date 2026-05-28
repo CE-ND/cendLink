@@ -75,6 +75,21 @@ const api = {
     recordRemoteDeployment(deployment) {
       return ipcRenderer.invoke('history:record-remote-deployment', deployment)
     },
+    deleteDeployment(id) {
+      return ipcRenderer.invoke('history:delete-deployment', id)
+    },
+  },
+  // Dockerfile 模板库：保存用户导入后的自定义模板。
+  dockerfileTemplates: {
+    list() {
+      return ipcRenderer.invoke('dockerfile-templates:list')
+    },
+    save(template) {
+      return ipcRenderer.invoke('dockerfile-templates:save', template)
+    },
+    delete(id) {
+      return ipcRenderer.invoke('dockerfile-templates:delete', id)
+    },
   },
   // 应用设置键值存储，value 会以 JSON 形式写入数据库。
   settings: {

@@ -17,6 +17,7 @@ const {
   activeServerId,
   pinnedServerId,
   loadStoredData,
+  createNewServer,
   pinServer,
   selectSavedServer,
 } = useWorkspaceSession()
@@ -43,6 +44,7 @@ onMounted(() => {
       :servers="savedServers"
       :active-server-id="activeServerId"
       :pinned-server-id="pinnedServerId"
+      @create-server="createNewServer"
       @pin-server="pinServer"
       @select-server="selectSavedServer"
     />

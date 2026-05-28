@@ -13,6 +13,7 @@ const {
   isDeploying,
   canDeploy,
   deployHint,
+  hasDeploymentBridge,
   updateDeployForm,
   selectDeployPackageFile,
   refreshDeployPreview,
@@ -87,7 +88,14 @@ onMounted(() => {
                 placeholder="请选择本地镜像包 tar.gz"
                 readonly
               />
-              <button type="button" class="secondary-button" @click="selectDeployPackageFile">选择包</button>
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="!hasDeploymentBridge"
+                @click="selectDeployPackageFile"
+              >
+                选择包
+              </button>
             </div>
           </div>
 
@@ -277,7 +285,7 @@ onMounted(() => {
             <button class="primary-button" type="button" :disabled="!canDeploy || isDeploying" @click="runDeployment">
               {{ isDeploying ? '部署中...' : '开始部署' }}
             </button>
-            <button class="secondary-button" type="button" @click="refreshDeployPreview">刷新预览</button>
+            <button class="secondary-button" type="button" :disabled="!hasDeploymentBridge" @click="refreshDeployPreview">刷新预览</button>
           </div>
 
           <p class="command-hint">{{ deployHint }}</p>
