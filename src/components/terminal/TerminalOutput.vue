@@ -8,6 +8,11 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  // 是否渲染底部常驻日志面板；部分页面只通过外部按钮打开弹窗。
+  inline: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 // 是否打开日志放大弹窗。
@@ -30,6 +35,11 @@ function openExpanded() {
 function closeExpanded() {
   isExpanded.value = false
 }
+
+defineExpose({
+  openExpanded,
+  closeExpanded,
+})
 
 /**
  * 将日志滚动到最新一行。
@@ -82,7 +92,7 @@ watch(isExpanded, async (expanded) => {
 </script>
 
 <template>
-  <section class="terminal-panel" aria-label="活动日志">
+  <section v-if="props.inline" class="terminal-panel" aria-label="活动日志">
     <header>
       <div class="terminal-header-actions">
         <span>Activity Log</span>
