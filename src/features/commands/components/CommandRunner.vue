@@ -59,9 +59,16 @@ function handleKeydown(event) {
 
   event.preventDefault()
 
-  if (!executeDisabled.value) {
-    emit('execute')
+  executeWithLogs()
+}
+
+function executeWithLogs() {
+  if (executeDisabled.value) {
+    return
   }
+
+  emit('open-logs')
+  emit('execute')
 }
 
 async function runQuickCommand(command) {
@@ -117,7 +124,7 @@ async function runQuickCommand(command) {
       ></textarea>
 
       <div class="command-actions">
-        <button class="primary-button" type="button" :disabled="executeDisabled" @click="emit('execute')">
+        <button class="primary-button" type="button" :disabled="executeDisabled" @click="executeWithLogs">
           {{ busy ? '执行中...' : '执行命令' }}
         </button>
         <button class="secondary-button" type="button" @click="emit('clear')">清空输出</button>
