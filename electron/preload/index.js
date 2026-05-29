@@ -42,6 +42,23 @@ const api = {
     executeCommand(config, command) {
       return ipcRenderer.invoke('ssh:execute-command', { config, command })
     },
+    startCommandStream(config, command) {
+      return ipcRenderer.invoke('ssh:start-command-stream', { config, command })
+    },
+    stopCommandStream(id) {
+      return ipcRenderer.invoke('ssh:stop-command-stream', id)
+    },
+    onCommandStreamEvent(callback) {
+      const listener = (_event, payload) => {
+        callback(payload)
+      }
+
+      ipcRenderer.on('ssh:command-stream-event', listener)
+
+      return () => {
+        ipcRenderer.removeListener('ssh:command-stream-event', listener)
+      }
+    },
     selectPrivateKeyFile() {
       return ipcRenderer.invoke('ssh:select-private-key-file')
     },
@@ -89,6 +106,18 @@ const api = {
     },
     delete(id) {
       return ipcRenderer.invoke('dockerfile-templates:delete', id)
+    },
+  },
+  // 服务模板库：保存某个业务服务的打包配置与部署配置。
+  serviceTemplates: {
+    list() {
+      return ipcRenderer.invoke('service-templates:list')
+    },
+    save(template) {
+      return ipcRenderer.invoke('service-templates:save', template)
+    },
+    delete(id) {
+      return ipcRenderer.invoke('service-templates:delete', id)
     },
   },
   // 应用设置键值存储，value 会以 JSON 形式写入数据库。

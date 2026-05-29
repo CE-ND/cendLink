@@ -8,14 +8,23 @@ const {
   savedServers,
   activeServerId,
   deployments,
+  serviceTemplates,
+  selectedServiceTemplate,
+  selectedServiceTemplateId,
   deployForm,
   deployPreview,
   deployResult,
   isDeploying,
+  isSavingServiceTemplate,
   canDeploy,
   deployHint,
   hasDeploymentBridge,
+  hasServiceTemplateBridge,
   updateDeployForm,
+  loadServiceTemplates,
+  selectServiceTemplate,
+  saveServiceTemplateFromDeploy,
+  deleteServiceTemplate,
   selectDeployPackageFile,
   refreshDeployPreview,
   runDeployment,
@@ -65,6 +74,25 @@ const currentPackageSource = computed(() => {
 
 const currentImageRef = computed(() => {
   return deployPreview.value?.imageRef || [deployForm.imageName, deployForm.imageTag].filter(Boolean).join(':') || '-'
+})
+
+const selectedServiceTemplateSummary = computed(() => {
+  if (!hasServiceTemplateBridge.value) {
+    return '服务模板能力需要重启桌面窗口后生效'
+  }
+
+  if (!selectedServiceTemplate.value) {
+    return '保存后可在打包和部署页复用该服务配置'
+  }
+
+  const version =
+    selectedServiceTemplate.value.lastPackageVersion ||
+    selectedServiceTemplate.value.deployConfig?.serviceVersion ||
+    '-'
+  const deployedAt = formatRecordTime(selectedServiceTemplate.value.lastDeployedAt)
+  const packagedAt = formatRecordTime(selectedServiceTemplate.value.lastPackagedAt)
+
+  return [`版本 ${version}`, deployedAt ? `部署 ${deployedAt}` : packagedAt ? `打包 ${packagedAt}` : '尚未记录流水'].join(' · ')
 })
 
 const targetServerLabel = computed(() => {
@@ -127,6 +155,37 @@ function applyHistoryPackage(item) {
     containerName: serviceName || deployForm.containerName,
     containerPort: Number(metadata.servicePort || deployForm.containerPort || 8080),
   })
+}
+
+async function saveCurrentServiceTemplate() {
+  await saveServiceTemplateFromDeploy()
+}
+
+async function createServiceTemplateCopy() {
+  const name = window.prompt('服务模板名称', deployForm.serviceName || selectedServiceTemplate.value?.name || '')
+
+  if (name === null) {
+    return
+  }
+
+  await saveServiceTemplateFromDeploy({
+    createNew: true,
+    name,
+  })
+}
+
+async function removeSelectedServiceTemplate() {
+  if (!selectedServiceTemplate.value) {
+    return
+  }
+
+  const confirmed = window.confirm(`确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`)
+
+  if (!confirmed) {
+    return
+  }
+
+  await deleteServiceTemplate(selectedServiceTemplateId.value)
 }
 
 function getFileName(filePath) {
@@ -204,6 +263,7 @@ function animateActivePackage() {
 }
 
 onMounted(() => {
+  loadServiceTemplates()
   refreshDeployPreview()
 
   if (!deployFormCard.value) {
@@ -287,6 +347,62 @@ watch(isAdvancedOpen, async (isOpen) => {
 
       <div class="deploy-form-body">
         <div class="deploy-fields">
+          <section class="deploy-section service-template-section">
+            <div class="deploy-section-header">
+              <div>
+                <span class="field-prompt">服务模板</span>
+                <strong>部署默认值</strong>
+              </div>
+            </div>
+
+            <div class="template-picker-row service-template-row">
+              <select
+                class="select-input"
+                :value="selectedServiceTemplateId"
+                :disabled="!hasServiceTemplateBridge"
+                @change="selectServiceTemplate($event.target.value, 'deploy')"
+              >
+                <option value="">未选择服务模板</option>
+                <option
+                  v-for="template in serviceTemplates"
+                  :key="template.id"
+                  :value="template.id"
+                >
+                  {{ template.name }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                @click="saveCurrentServiceTemplate"
+              >
+                {{ selectedServiceTemplate ? '更新服务' : '保存服务' }}
+              </button>
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                @click="createServiceTemplateCopy"
+              >
+                另存
+              </button>
+              <button
+                v-if="selectedServiceTemplate"
+                type="button"
+                class="danger-button compact-button"
+                :disabled="isSavingServiceTemplate"
+                @click="removeSelectedServiceTemplate"
+              >
+                删除
+              </button>
+            </div>
+
+            <small class="template-description">
+              {{ selectedServiceTemplateSummary }}
+            </small>
+          </section>
+
           <div class="deploy-package-summary" :class="{ empty: !deployForm.localPackagePath }">
             <div class="deploy-summary-head">
               <span class="field-prompt">当前镜像包</span>

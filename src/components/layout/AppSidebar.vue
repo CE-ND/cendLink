@@ -38,8 +38,9 @@ const router = useRouter()
 // 左侧主导航。routeName 对应 src/router/index.js 中的路由 name。
 const navigationItems = [
   { routeName: 'servers', label: '服务器' },
-  { routeName: 'deploy', label: '远程部署' },
   { routeName: 'package', label: '镜像打包' },
+  { routeName: 'deploy', label: '远程部署' },
+  { routeName: 'containers', label: '容器日志' },
   { routeName: 'commands', label: '命令' },
   { routeName: 'history', label: '部署记录' },
   { routeName: 'settings', label: '设置' },

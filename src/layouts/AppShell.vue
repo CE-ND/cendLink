@@ -26,7 +26,7 @@ const {
 // 当前页面头部的小标题和标题，来自路由 meta。
 const pageEyebrow = computed(() => route.meta.eyebrow || 'Workspace')
 const pageTitle = computed(() => route.meta.title || '远程工作区')
-const isDeployRoute = computed(() => route.name === 'deploy')
+const isTerminalHiddenRoute = computed(() => ['package', 'deploy', 'settings', 'containers'].includes(route.name))
 // 判断 preload 桥是否可用，用于提示当前是 Electron 模式还是浏览器预览。
 const bridgeStatusText = computed(() => {
   return hasElectronBridge.value ? 'Electron 已连接' : '浏览器预览'
@@ -55,7 +55,7 @@ onMounted(() => {
       @select-server="selectSavedServer"
     />
 
-    <section class="workspace" :class="{ 'workspace-terminal-hidden': isDeployRoute }">
+    <section class="workspace" :class="{ 'workspace-terminal-hidden': isTerminalHiddenRoute }">
       <header class="workspace-header">
         <div>
           <p class="eyebrow">{{ pageEyebrow }}</p>
@@ -72,7 +72,7 @@ onMounted(() => {
         </RouterView>
       </div>
 
-      <TerminalOutput ref="terminalRef" :lines="logs" :inline="!isDeployRoute" />
+      <TerminalOutput ref="terminalRef" :lines="logs" :inline="!isTerminalHiddenRoute" />
     </section>
   </main>
 </template>

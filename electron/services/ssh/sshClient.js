@@ -7,6 +7,8 @@ const { Client } = ssh2
 
 // 默认 SSH 握手超时时间，前端表单不填或填错时使用。
 const DEFAULT_TIMEOUT_MS = 10000
+// 默认远程命令运行超时时间，避免 Docker 等命令长期无响应拖住界面。
+const DEFAULT_COMMAND_TIMEOUT_MS = 60000
 // 命令输出最多返回给渲染进程的字符数，避免超大日志撑爆界面和 IPC。
 const MAX_OUTPUT_CHARS = 50000
 
@@ -54,16 +56,18 @@ export async function executeSshCommand(input, command) {
   try {
     const normalized = await normalizeConnectionInput(input)
     const normalizedCommand = normalizeCommand(command)
+    const commandTimeoutMs = normalizeCommandTimeout(input?.commandTimeoutMs)
 
     appendLog(logs, `准备连接 ${normalized.username}@${normalized.host}:${normalized.port}`)
     appendLog(logs, `准备执行命令: ${summarizeCommand(normalizedCommand)}`)
 
     const connectionConfig = await toSshConfig(normalized)
-    const result = await connectAndExecute(connectionConfig, normalizedCommand, logs)
+    const result = await connectAndExecute(connectionConfig, normalizedCommand, logs, commandTimeoutMs)
 
     return {
       ...result,
       command: normalizedCommand,
+      commandTimeoutMs,
       durationMs: Date.now() - startedAt,
       logs,
     }
@@ -79,6 +83,7 @@ export async function executeSshCommand(input, command) {
       stderr: '',
       exitCode: null,
       signal: null,
+      commandTimeoutMs: normalizeCommandTimeout(input?.commandTimeoutMs),
       durationMs: Date.now() - startedAt,
       logs,
     }
@@ -249,10 +254,39 @@ function connectAndProbe(connectionConfig, logs) {
 /**
  * 建立 SSH 连接并执行用户输入的单条命令。
  */
-function connectAndExecute(connectionConfig, command, logs) {
+function connectAndExecute(connectionConfig, command, logs, commandTimeoutMs = DEFAULT_COMMAND_TIMEOUT_MS) {
   return new Promise((resolve) => {
     const client = new Client()
     let settled = false
+    let commandTimer = null
+    let activeStream = null
+    let stdout = ''
+    let stderr = ''
+
+    const clearCommandTimer = () => {
+      if (commandTimer) {
+        clearTimeout(commandTimer)
+        commandTimer = null
+      }
+    }
+
+    const stopRemoteCommand = () => {
+      if (!activeStream) {
+        return
+      }
+
+      try {
+        activeStream.signal?.('KILL')
+      } catch {
+        // 部分 SSH 服务端不支持 signal，请继续关闭 channel 和连接。
+      }
+
+      try {
+        activeStream.close?.()
+      } catch {
+        // 关闭失败时由 client.end() 兜底。
+      }
+    }
 
     const finish = (payload) => {
       if (settled) {
@@ -260,6 +294,7 @@ function connectAndExecute(connectionConfig, command, logs) {
       }
 
       settled = true
+      clearCommandTimer()
       client.end()
       resolve(payload)
     }
@@ -267,6 +302,20 @@ function connectAndExecute(connectionConfig, command, logs) {
     client
       .on('ready', () => {
         appendLog(logs, 'SSH 握手成功，正在执行远程命令')
+        commandTimer = setTimeout(() => {
+          appendLog(logs, `命令执行超过 ${formatDuration(commandTimeoutMs)}，已自动中断`)
+          stopRemoteCommand()
+          finish({
+            ok: false,
+            status: 'timeout',
+            message: `命令执行超过 ${formatDuration(commandTimeoutMs)}，已自动中断`,
+            stdout: trimOutput(stdout),
+            stderr: trimOutput(stderr),
+            exitCode: null,
+            signal: 'TIMEOUT',
+          })
+        }, commandTimeoutMs)
+        commandTimer.unref?.()
 
         client.exec(command, (error, stream) => {
           if (error) {
@@ -282,8 +331,7 @@ function connectAndExecute(connectionConfig, command, logs) {
             return
           }
 
-          let stdout = ''
-          let stderr = ''
+          activeStream = stream
 
           stream
             .on('close', (code, signal) => {
@@ -432,6 +480,20 @@ function trimOutput(output) {
  */
 function summarizeCommand(command) {
   return command.replace(/\s+/g, ' ').slice(0, 80)
+}
+
+function normalizeCommandTimeout(value) {
+  const timeoutMs = Number(value || DEFAULT_COMMAND_TIMEOUT_MS)
+
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) {
+    return DEFAULT_COMMAND_TIMEOUT_MS
+  }
+
+  return Math.min(timeoutMs, 10 * 60 * 1000)
+}
+
+function formatDuration(durationMs) {
+  return `${Math.round(durationMs / 1000)} 秒`
 }
 
 /**

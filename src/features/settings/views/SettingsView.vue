@@ -1,13 +1,61 @@
 <script setup>
-import FeaturePlaceholder from '../../../components/feedback/FeaturePlaceholder.vue'
+import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 
-// 设置页用于承接渲染层偏好配置和后续的工作区默认项。
+const {
+  workspaceSettings,
+  settingsResult,
+  isSavingSettings,
+  hasStorageBridge,
+  updateWorkspaceSettings,
+  saveWorkspaceSettings,
+} = useWorkspaceSession()
 </script>
 
 <template>
-  <FeaturePlaceholder
-    eyebrow="Workspace Settings"
-    title="设置模块待实现"
-    description="后续在这里管理默认超时、日志保留策略、部署偏好，以及 Electron 桌面端的工作区设置。"
-  />
+  <div class="settings-view">
+    <section class="settings-group">
+      <div class="settings-group-head">
+        <strong>远程命令</strong>
+        <span>{{ hasStorageBridge ? '已连接本地设置' : '预览模式' }}</span>
+      </div>
+
+      <label class="settings-row">
+        <span class="settings-row-copy">
+          <strong>命令超时</strong>
+          <small>超过该时间后自动中断本次 SSH 命令，避免 Docker 查询或日志命令长期无响应。</small>
+        </span>
+
+        <span class="settings-input-unit">
+          <input
+            :value="workspaceSettings.commandTimeoutSeconds"
+            type="number"
+            min="5"
+            max="600"
+            step="5"
+            @input="updateWorkspaceSettings({ commandTimeoutSeconds: $event.target.value })"
+          />
+          <b>秒</b>
+        </span>
+      </label>
+
+      <div class="settings-actions">
+        <p
+          v-if="settingsResult"
+          class="result-message settings-message"
+          :class="{ ok: settingsResult.ok }"
+        >
+          {{ settingsResult.message }}
+        </p>
+
+        <button
+          class="primary-button"
+          type="button"
+          :disabled="isSavingSettings || !hasStorageBridge"
+          @click="saveWorkspaceSettings"
+        >
+          {{ isSavingSettings ? '保存中...' : '保存设置' }}
+        </button>
+      </div>
+    </section>
+  </div>
 </template>

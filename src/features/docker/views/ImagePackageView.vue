@@ -8,14 +8,23 @@ const {
   packageForm,
   packagePreview,
   packageResult,
+  serviceTemplates,
+  selectedServiceTemplate,
+  selectedServiceTemplateId,
   dockerfileTemplateOptions,
   selectedDockerfileTemplate,
   isBuildingPackage,
   isSavingDockerfileTemplate,
+  isSavingServiceTemplate,
+  hasServiceTemplateBridge,
   canBuildImagePackage,
   packageHint,
   updatePackageForm,
+  loadServiceTemplates,
   loadDockerfileTemplates,
+  selectServiceTemplate,
+  saveServiceTemplateFromPackage,
+  deleteServiceTemplate,
   selectDockerfileTemplate,
   applyImportedDockerfileTemplate,
   saveDockerfileTemplate,
@@ -25,6 +34,8 @@ const {
   buildImagePackage,
   openImagePackageDirectory,
 } = useWorkspaceSession()
+
+const emit = defineEmits(['open-logs'])
 
 const previewLines = computed(() => {
   return packagePreview.value?.dockerfileText?.split('\n') || []
@@ -47,6 +58,24 @@ const customTemplateOptions = computed(() => {
 
 const selectedTemplateDescription = computed(() => {
   return selectedDockerfileTemplate.value?.description || packageForm.dockerfileTemplateDescription || ''
+})
+
+const selectedServiceTemplateSummary = computed(() => {
+  if (!hasServiceTemplateBridge.value) {
+    return '服务模板能力需要重启桌面窗口后生效'
+  }
+
+  if (!selectedServiceTemplate.value) {
+    return '保存后可在打包和部署页复用该服务配置'
+  }
+
+  const version =
+    selectedServiceTemplate.value.lastPackageVersion ||
+    selectedServiceTemplate.value.packageConfig?.serviceVersion ||
+    '-'
+  const packagedAt = formatTemplateTime(selectedServiceTemplate.value.lastPackagedAt)
+
+  return [`上次版本 ${version}`, packagedAt ? `打包 ${packagedAt}` : '尚未记录打包'].join(' · ')
 })
 
 const selectedTemplateSourceLabel = computed(() => {
@@ -123,6 +152,25 @@ function formatBytes(value) {
   }
 
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatTemplateTime(value) {
+  if (!value) {
+    return ''
+  }
+
+  const timestamp = Date.parse(value)
+
+  if (!Number.isFinite(timestamp)) {
+    return ''
+  }
+
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(timestamp))
 }
 
 function showPackageToast() {
@@ -219,6 +267,37 @@ async function removeSelectedDockerfileTemplate() {
   await deleteDockerfileTemplate(packageForm.dockerfileTemplateId)
 }
 
+async function saveCurrentServiceTemplate() {
+  await saveServiceTemplateFromPackage()
+}
+
+async function createServiceTemplateCopy() {
+  const name = window.prompt('服务模板名称', packageForm.serviceName || selectedServiceTemplate.value?.name || '')
+
+  if (name === null) {
+    return
+  }
+
+  await saveServiceTemplateFromPackage({
+    createNew: true,
+    name,
+  })
+}
+
+async function removeSelectedServiceTemplate() {
+  if (!selectedServiceTemplate.value) {
+    return
+  }
+
+  const confirmed = window.confirm(`确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`)
+
+  if (!confirmed) {
+    return
+  }
+
+  await deleteServiceTemplate(selectedServiceTemplateId.value)
+}
+
 watch(packageResult, (nextResult) => {
   if (nextResult) {
     showPackageToast()
@@ -229,6 +308,7 @@ watch(packageResult, (nextResult) => {
 })
 
 onMounted(() => {
+  loadServiceTemplates()
   loadDockerfileTemplates()
   refreshPackagePreview()
 })
@@ -253,6 +333,55 @@ onBeforeUnmount(() => {
 
       <div class="package-form-body">
         <div class="package-fields">
+          <div class="field">
+            <span>服务模板</span>
+            <div class="template-picker-row service-template-row">
+              <select
+                class="select-input"
+                :value="selectedServiceTemplateId"
+                :disabled="!hasServiceTemplateBridge"
+                @change="selectServiceTemplate($event.target.value, 'package')"
+              >
+                <option value="">未选择服务模板</option>
+                <option
+                  v-for="template in serviceTemplates"
+                  :key="template.id"
+                  :value="template.id"
+                >
+                  {{ template.name }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                @click="saveCurrentServiceTemplate"
+              >
+                {{ selectedServiceTemplate ? '更新服务' : '保存服务' }}
+              </button>
+              <button
+                type="button"
+                class="secondary-button compact-button"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                @click="createServiceTemplateCopy"
+              >
+                另存
+              </button>
+              <button
+                v-if="selectedServiceTemplate"
+                type="button"
+                class="danger-button compact-button"
+                :disabled="isSavingServiceTemplate"
+                @click="removeSelectedServiceTemplate"
+              >
+                删除
+              </button>
+            </div>
+            <small class="template-description">
+              {{ selectedServiceTemplateSummary }}
+            </small>
+          </div>
+
           <div class="field">
             <span>Dockerfile 模板</span>
             <div class="template-picker-row">
@@ -421,6 +550,7 @@ onBeforeUnmount(() => {
           </button>
           <button class="secondary-button" type="button" @click="refreshPackagePreview">刷新预览</button>
           <button class="secondary-button" type="button" @click="openImagePackageDirectory">打开目录</button>
+          <button class="secondary-button" type="button" @click="emit('open-logs')">查看日志</button>
         </div>
 
         <p class="command-hint">{{ packageHint }}</p>

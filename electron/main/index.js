@@ -41,6 +41,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
+    icon: getAppIconPath(),
   })
   mainWindow.setMenuBarVisibility(false)
 
@@ -50,6 +51,10 @@ function createWindow() {
   }
 
   mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL || 'http://127.0.0.1:4001')
+}
+
+function getAppIconPath() {
+  return path.join(__dirname, '..', '..', 'build', 'icon.ico')
 }
 
 app.whenReady().then(async () => {

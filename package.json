@@ -1,14 +1,20 @@
 {
   "name": "cendlink",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "CendLink desktop deployment tool",
+  "author": "CendLink",
   "type": "module",
   "main": "electron/main/index.js",
   "scripts": {
     "dev": "vite",
     "dev:electron": "node scripts/dev-electron.mjs",
     "electron:dev": "electron .",
+    "build:icon": "node scripts/generate-icons.mjs",
     "build": "vite build",
+    "pack": "npm run build:icon && npm run build && electron-builder --dir",
+    "dist": "npm run build:icon && npm run build && electron-builder",
+    "dist:win": "npm run build:icon && npm run build && electron-builder --win",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -20,6 +26,46 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.6",
     "electron": "^39.2.7",
+    "electron-builder": "^26.8.1",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.34.5",
     "vite": "^8.0.12"
+  },
+  "build": {
+    "appId": "com.cendlink.desktop",
+    "productName": "CendLink",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "src/shared/**/*",
+      "build/icon.ico",
+      "build/icon.png"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

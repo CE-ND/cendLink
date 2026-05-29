@@ -8,6 +8,10 @@ import {
   parseDockerfileText,
 } from '../../../shared/dockerfileTemplates.js'
 
+const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60
+const MIN_COMMAND_TIMEOUT_SECONDS = 5
+const MAX_COMMAND_TIMEOUT_SECONDS = 600
+
 // 渲染进程共享会话状态。各个页面通过它复用 SSH 上下文，避免切页后状态丢失。
 function createDefaultServerForm() {
   return {
@@ -103,6 +107,8 @@ const isLoadingStoredData = ref(false)
 const isSavingServer = ref(false)
 // 保存自定义 Dockerfile 模板进行中状态。
 const isSavingDockerfileTemplate = ref(false)
+// 保存服务模板进行中状态。
+const isSavingServiceTemplate = ref(false)
 // 删除部署记录进行中状态。
 const deletingDeploymentIds = ref([])
 // 本地数据库中已保存的服务器列表。
@@ -113,6 +119,16 @@ const commandRuns = ref([])
 const deployments = ref([])
 // 用户保存的自定义 Dockerfile 模板。内置模板来自共享模块，不写入数据库。
 const savedDockerfileTemplates = ref([])
+// 用户保存的服务模板。服务模板与 Dockerfile 模板分层保存。
+const serviceTemplates = ref([])
+// 当前选中的服务模板 id；镜像打包页和远程部署页共享同一个业务服务上下文。
+const selectedServiceTemplateId = ref('')
+// 工作区级别设置，保存到 app_settings。
+const workspaceSettings = reactive({
+  commandTimeoutSeconds: DEFAULT_COMMAND_TIMEOUT_SECONDS,
+})
+const settingsResult = ref(null)
+const isSavingSettings = ref(false)
 // 当前选中的已保存服务器 id；空字符串代表尚未保存或未选中。
 const activeServerId = ref('')
 // 当前被设为默认启动目标的服务器 id。
@@ -165,7 +181,9 @@ const hasStorageBridge = computed(() => {
       bridge?.history?.recordCommandRun &&
       bridge?.history?.recordImagePackage &&
       bridge?.history?.recordRemoteDeployment &&
-      bridge?.history?.deleteDeployment,
+      bridge?.history?.deleteDeployment &&
+      bridge?.settings?.get &&
+      bridge?.settings?.set,
   )
 })
 
@@ -176,6 +194,16 @@ const hasDockerfileTemplateBridge = computed(() => {
     bridge?.dockerfileTemplates?.list &&
       bridge?.dockerfileTemplates?.save &&
       bridge?.dockerfileTemplates?.delete,
+  )
+})
+
+const hasServiceTemplateBridge = computed(() => {
+  const bridge = getStorageBridge()
+
+  return Boolean(
+    bridge?.serviceTemplates?.list &&
+      bridge?.serviceTemplates?.save &&
+      bridge?.serviceTemplates?.delete,
   )
 })
 
@@ -205,6 +233,10 @@ const selectedDockerfileTemplate = computed(() => {
       (template) => template.id === packageForm.dockerfileTemplateId,
     ) || dockerfileTemplateOptions.value[0]
   )
+})
+
+const selectedServiceTemplate = computed(() => {
+  return serviceTemplates.value.find((template) => template.id === selectedServiceTemplateId.value) || null
 })
 
 // 当前是否处于新建服务器模式。没有 activeServerId 时，保存会创建一条新记录。
@@ -340,7 +372,7 @@ const deployHint = computed(() => {
     return '部署执行中，请等待服务器返回结果。'
   }
 
-  return '将按预览命令上传镜像包、docker load、创建目录并启动新容器。'
+  return '将先检查端口占用，再按预览命令上传镜像包、docker load、创建目录并启动新容器。'
 })
 
 /**
@@ -550,6 +582,101 @@ async function deleteDockerfileTemplate(templateId) {
 }
 
 /**
+ * 切换服务模板。服务模板是业务服务配置，不等同于 Dockerfile 模板。
+ */
+function selectServiceTemplate(templateId, scope = 'package') {
+  const targetId = String(templateId || '').trim()
+
+  if (!targetId) {
+    selectedServiceTemplateId.value = ''
+    return
+  }
+
+  const selected = serviceTemplates.value.find((template) => template.id === targetId)
+
+  if (!selected) {
+    logs.value.push(logLine('未找到要切换的服务模板'))
+    return
+  }
+
+  selectedServiceTemplateId.value = selected.id
+
+  if (scope === 'deploy') {
+    applyServiceTemplateToDeploy(selected)
+  } else if (scope === 'all') {
+    applyServiceTemplateToPackage(selected)
+    applyServiceTemplateToDeploy(selected)
+  } else {
+    applyServiceTemplateToPackage(selected)
+  }
+
+  logs.value.push(logLine(`已应用服务模板: ${selected.name}`))
+}
+
+/**
+ * 保存当前打包页字段为服务模板的打包配置。
+ */
+async function saveServiceTemplateFromPackage(options = {}) {
+  const existing = getServiceTemplateForSave(options)
+  const payload = buildServiceTemplatePayload(existing, {
+    name: options.name,
+    description: options.description,
+    packageConfig: readPackageTemplateConfig(),
+    deployConfig: existing?.deployConfig || deriveDeployConfigFromPackage(),
+  })
+
+  return saveServiceTemplatePayload(payload, '服务打包模板已保存')
+}
+
+/**
+ * 保存当前部署页字段为服务模板的部署配置。
+ */
+async function saveServiceTemplateFromDeploy(options = {}) {
+  const existing = getServiceTemplateForSave(options)
+  const payload = buildServiceTemplatePayload(existing, {
+    name: options.name,
+    description: options.description,
+    packageConfig: existing?.packageConfig || derivePackageConfigFromDeploy(),
+    deployConfig: readDeployTemplateConfig(),
+  })
+
+  return saveServiceTemplatePayload(payload, '服务部署模板已保存')
+}
+
+/**
+ * 删除一个服务模板。
+ */
+async function deleteServiceTemplate(templateId = selectedServiceTemplateId.value) {
+  const bridge = getStorageBridge()
+  const targetId = String(templateId || '').trim()
+
+  if (!targetId) {
+    return
+  }
+
+  if (!bridge?.serviceTemplates?.delete) {
+    logs.value.push(logLine('当前 Electron 进程还没有服务模板能力，请重启桌面窗口后再试'))
+    return
+  }
+
+  try {
+    const result = await bridge.serviceTemplates.delete(targetId)
+
+    if (result?.deleted) {
+      serviceTemplates.value = serviceTemplates.value.filter((template) => template.id !== targetId)
+
+      if (selectedServiceTemplateId.value === targetId) {
+        selectedServiceTemplateId.value = ''
+      }
+
+      logs.value.push(logLine('服务模板已删除'))
+    }
+  } catch (error) {
+    logs.value.push(logLine(`删除服务模板失败: ${error?.message || error}`))
+  }
+}
+
+/**
  * 更新部署表单，并刷新 docker run 预览。
  */
 function updateDeployForm(nextValue) {
@@ -557,6 +684,45 @@ function updateDeployForm(nextValue) {
   deployPreview.value = null
   deployResult.value = null
   void refreshDeployPreview()
+}
+
+function updateWorkspaceSettings(nextValue) {
+  if (Object.prototype.hasOwnProperty.call(nextValue || {}, 'commandTimeoutSeconds')) {
+    workspaceSettings.commandTimeoutSeconds = normalizeCommandTimeoutSeconds(nextValue.commandTimeoutSeconds)
+    settingsResult.value = null
+  }
+}
+
+async function saveWorkspaceSettings() {
+  const bridge = getStorageBridge()
+
+  if (!bridge?.settings?.set) {
+    settingsResult.value = {
+      ok: false,
+      message: '当前是浏览器预览模式，无法保存设置',
+    }
+    return
+  }
+
+  const commandTimeoutSeconds = normalizeCommandTimeoutSeconds(workspaceSettings.commandTimeoutSeconds)
+  workspaceSettings.commandTimeoutSeconds = commandTimeoutSeconds
+  isSavingSettings.value = true
+
+  try {
+    await bridge.settings.set('commandTimeoutSeconds', commandTimeoutSeconds)
+    settingsResult.value = {
+      ok: true,
+      message: '设置已保存',
+    }
+    logs.value.push(logLine(`远程命令超时已设置为 ${commandTimeoutSeconds} 秒`))
+  } catch (error) {
+    settingsResult.value = {
+      ok: false,
+      message: `保存设置失败: ${error?.message || error}`,
+    }
+  } finally {
+    isSavingSettings.value = false
+  }
 }
 
 /**
@@ -578,12 +744,13 @@ async function loadStoredData() {
   isLoadingStoredData.value = true
 
   try {
-    const [info, servers, runs, deploymentRows, defaultServerId] = await Promise.all([
+    const [info, servers, runs, deploymentRows, defaultServerId, commandTimeoutSeconds] = await Promise.all([
       bridge.data.getStorageInfo(),
       bridge.servers.list(),
       bridge.history.listCommandRuns(50),
       bridge.history.listDeployments(50),
       bridge.settings.get('defaultServerId', ''),
+      bridge.settings.get('commandTimeoutSeconds', DEFAULT_COMMAND_TIMEOUT_SECONDS),
     ])
 
     storageInfo.value = info
@@ -591,8 +758,10 @@ async function loadStoredData() {
     commandRuns.value = runs
     deployments.value = deploymentRows
     pinnedServerId.value = String(defaultServerId || '')
+    workspaceSettings.commandTimeoutSeconds = normalizeCommandTimeoutSeconds(commandTimeoutSeconds)
     savedServers.value.sort(compareSavedServers)
     await loadDockerfileTemplates()
+    await loadServiceTemplates()
     hydrateDeployFormFromHistory()
     hasLoadedStoredData.value = true
     logs.value.push(logLine(`本地数据目录已就绪: ${info.dataDir}`))
@@ -619,6 +788,31 @@ async function loadDockerfileTemplates() {
     savedDockerfileTemplates.value = Array.isArray(templates) ? templates : []
   } catch (error) {
     logs.value.push(logLine(`读取 Dockerfile 模板失败: ${error?.message || error}`))
+  }
+}
+
+/**
+ * 从本地数据库读取用户保存的服务模板。
+ */
+async function loadServiceTemplates() {
+  const bridge = getStorageBridge()
+
+  if (!bridge?.serviceTemplates?.list) {
+    return
+  }
+
+  try {
+    const templates = await bridge.serviceTemplates.list()
+    serviceTemplates.value = Array.isArray(templates) ? templates : []
+
+    if (
+      selectedServiceTemplateId.value &&
+      !serviceTemplates.value.some((template) => template.id === selectedServiceTemplateId.value)
+    ) {
+      selectedServiceTemplateId.value = ''
+    }
+  } catch (error) {
+    logs.value.push(logLine(`读取服务模板失败: ${error?.message || error}`))
   }
 }
 
@@ -738,6 +932,7 @@ async function buildImagePackage() {
     if (savedDeployment) {
       upsertDeployment(savedDeployment)
     }
+    await syncPackageResultToServiceTemplate(response)
   } catch (error) {
     packageResult.value = {
       ok: false,
@@ -801,6 +996,7 @@ async function runDeployment() {
     if (savedDeployment) {
       upsertDeployment(savedDeployment)
     }
+    await syncDeployResultToServiceTemplate(response)
   } catch (error) {
     deployResult.value = {
       ok: false,
@@ -1092,9 +1288,20 @@ async function executeCommand() {
   }
 
   isExecutingCommand.value = true
+  logs.value = [
+    ...logs.value,
+    ...(logs.value.length ? [''] : []),
+    logLine(`开始执行命令: ${summarizeCommand(command)}`),
+  ]
 
   try {
-    const response = await ssh.executeCommand({ ...form }, command)
+    const response = await ssh.executeCommand(
+      {
+        ...form,
+        commandTimeoutMs: normalizeCommandTimeoutSeconds(workspaceSettings.commandTimeoutSeconds) * 1000,
+      },
+      command,
+    )
 
     commandResult.value = response
     appendCommandOutput(response)
@@ -1165,6 +1372,10 @@ function appendCommandOutput(response) {
 
   nextLines.push(logLine(`命令执行结束: ${summarizeCommand(command)}`))
   nextLines.push(...formatCommandLines(command))
+
+  if (response.message) {
+    nextLines.push(`[status] ${response.message}`)
+  }
 
   if (response.stdout) {
     nextLines.push(...toDisplayLines(response.stdout))
@@ -1371,6 +1582,239 @@ function upsertDeployment(deployment) {
   })
 }
 
+function applyServiceTemplateToPackage(template) {
+  const config = template?.packageConfig || {}
+  const version = template?.lastPackageVersion || config.serviceVersion
+
+  updatePackageForm({
+    jarPath: String(config.jarPath || packageForm.jarPath || ''),
+    serviceName: String(config.serviceName || template?.serviceName || packageForm.serviceName),
+    serviceVersion: String(version || packageForm.serviceVersion),
+    servicePort: Number(config.servicePort || packageForm.servicePort || 8080),
+    javaVersion: String(config.javaVersion || packageForm.javaVersion),
+    javaOpts: String(config.javaOpts || packageForm.javaOpts),
+    baseImage: String(config.baseImage || packageForm.baseImage),
+    baseImageFamily: String(config.baseImageFamily || packageForm.baseImageFamily),
+    useNonRootUser:
+      config.useNonRootUser !== undefined ? Boolean(config.useNonRootUser) : packageForm.useNonRootUser,
+    appUser: String(config.appUser || packageForm.appUser),
+    dockerfileTemplateId: String(config.dockerfileTemplateId || packageForm.dockerfileTemplateId),
+    dockerfileTemplateName: String(config.dockerfileTemplateName || packageForm.dockerfileTemplateName),
+    dockerfileTemplateDescription: String(
+      config.dockerfileTemplateDescription || packageForm.dockerfileTemplateDescription,
+    ),
+    dockerfileSourceType: String(config.dockerfileSourceType || packageForm.dockerfileSourceType),
+    dockerfileTemplateText: String(config.dockerfileTemplateText || packageForm.dockerfileTemplateText || ''),
+  })
+}
+
+function applyServiceTemplateToDeploy(template) {
+  const config = template?.deployConfig || {}
+  const serviceName = String(config.serviceName || template?.serviceName || deployForm.serviceName)
+  const imageTag = String(template?.lastImageTag || config.imageTag || deployForm.imageTag)
+  const serviceVersion = String(template?.lastPackageVersion || config.serviceVersion || imageTag)
+
+  updateDeployForm({
+    packageSourceType: template?.lastPackagePath ? 'template' : config.packageSourceType || deployForm.packageSourceType,
+    localPackagePath: String(template?.lastPackagePath || config.localPackagePath || ''),
+    serviceName,
+    serviceVersion,
+    imageName: String(config.imageName || serviceName || deployForm.imageName).toLowerCase(),
+    imageTag,
+    containerName: String(config.containerName || serviceName || deployForm.containerName),
+    hostPort: Number(config.hostPort || deployForm.hostPort || 8080),
+    containerPort: Number(config.containerPort || deployForm.containerPort || 8080),
+    remoteBaseDir: String(config.remoteBaseDir || deployForm.remoteBaseDir),
+    remotePackageDir: String(config.remotePackageDir || deployForm.remotePackageDir),
+    restartPolicy: String(config.restartPolicy || deployForm.restartPolicy),
+    envText: String(config.envText || deployForm.envText),
+    extraArgs: String(config.extraArgs || deployForm.extraArgs || ''),
+    containerConflictStrategy: String(config.containerConflictStrategy || deployForm.containerConflictStrategy),
+    imageCleanupStrategy: String(config.imageCleanupStrategy || deployForm.imageCleanupStrategy),
+    directoryPermissionMode: String(config.directoryPermissionMode || deployForm.directoryPermissionMode),
+  })
+}
+
+function getServiceTemplateForSave(options = {}) {
+  if (options.createNew) {
+    return null
+  }
+
+  const targetId = String(options.id || selectedServiceTemplateId.value || '').trim()
+  return serviceTemplates.value.find((template) => template.id === targetId) || null
+}
+
+function buildServiceTemplatePayload(existing, overrides = {}) {
+  const packageConfig = overrides.packageConfig || existing?.packageConfig || {}
+  const deployConfig = overrides.deployConfig || existing?.deployConfig || {}
+  const serviceName = String(packageConfig.serviceName || deployConfig.serviceName || existing?.serviceName || '').trim()
+  const name = String(overrides.name || existing?.name || serviceName || '').trim() || '未命名服务模板'
+
+  return {
+    id: existing?.id,
+    name,
+    description: String(overrides.description ?? existing?.description ?? '').trim(),
+    serviceName,
+    packageConfig,
+    deployConfig,
+    lastPackageVersion: String(overrides.lastPackageVersion ?? existing?.lastPackageVersion ?? '').trim(),
+    lastImageTag: String(overrides.lastImageTag ?? existing?.lastImageTag ?? '').trim(),
+    lastPackagePath: String(overrides.lastPackagePath ?? existing?.lastPackagePath ?? '').trim(),
+    lastPackagedAt: overrides.lastPackagedAt ?? existing?.lastPackagedAt ?? null,
+    lastDeployedAt: overrides.lastDeployedAt ?? existing?.lastDeployedAt ?? null,
+    createdAt: existing?.createdAt,
+  }
+}
+
+async function saveServiceTemplatePayload(payload, successMessage) {
+  const bridge = getStorageBridge()
+
+  if (!bridge?.serviceTemplates?.save) {
+    logs.value.push(logLine('当前 Electron 进程还没有服务模板能力，请重启桌面窗口后再试'))
+    return null
+  }
+
+  if (!payload.serviceName) {
+    logs.value.push(logLine('保存服务模板前请先填写服务名'))
+    return null
+  }
+
+  isSavingServiceTemplate.value = true
+
+  try {
+    const saved = await bridge.serviceTemplates.save(payload)
+    upsertServiceTemplate(saved)
+    selectedServiceTemplateId.value = saved.id
+    logs.value.push(logLine(`${successMessage}: ${saved.name}`))
+    return saved
+  } catch (error) {
+    logs.value.push(logLine(`保存服务模板失败: ${error?.message || error}`))
+    return null
+  } finally {
+    isSavingServiceTemplate.value = false
+  }
+}
+
+async function syncPackageResultToServiceTemplate(response) {
+  if (!response?.ok || !selectedServiceTemplateId.value) {
+    return
+  }
+
+  const existing = selectedServiceTemplate.value
+
+  if (!existing) {
+    return
+  }
+
+  const payload = buildServiceTemplatePayload(existing, {
+    packageConfig: readPackageTemplateConfig(),
+    deployConfig: {
+      ...(existing.deployConfig || {}),
+      serviceName: response.serviceName || deployForm.serviceName,
+      serviceVersion: response.serviceVersion || deployForm.serviceVersion,
+      imageName: response.imageName || deployForm.imageName,
+      imageTag: response.imageTag || deployForm.imageTag,
+      containerName: existing.deployConfig?.containerName || deployForm.containerName || response.serviceName,
+      containerPort: Number(response.servicePort || deployForm.containerPort || 8080),
+      localPackagePath: response.packagePath || existing.deployConfig?.localPackagePath || '',
+    },
+    lastPackageVersion: response.serviceVersion,
+    lastImageTag: response.imageTag,
+    lastPackagePath: response.packagePath,
+    lastPackagedAt: new Date().toISOString(),
+  })
+
+  await saveServiceTemplatePayload(payload, '服务模板已同步本次打包结果')
+}
+
+async function syncDeployResultToServiceTemplate(response) {
+  if (!response?.ok || !selectedServiceTemplateId.value) {
+    return
+  }
+
+  const existing = selectedServiceTemplate.value
+
+  if (!existing) {
+    return
+  }
+
+  const payload = buildServiceTemplatePayload(existing, {
+    deployConfig: readDeployTemplateConfig(),
+    lastDeployedAt: new Date().toISOString(),
+  })
+
+  await saveServiceTemplatePayload(payload, '服务模板已同步本次部署结果')
+}
+
+function readPackageTemplateConfig() {
+  return {
+    jarPath: packageForm.jarPath,
+    serviceName: packageForm.serviceName,
+    serviceVersion: packageForm.serviceVersion,
+    servicePort: Number(packageForm.servicePort || 0),
+    javaVersion: packageForm.javaVersion,
+    javaOpts: packageForm.javaOpts,
+    baseImage: packageForm.baseImage,
+    baseImageFamily: packageForm.baseImageFamily,
+    useNonRootUser: Boolean(packageForm.useNonRootUser),
+    appUser: packageForm.appUser,
+    dockerfileTemplateId: packageForm.dockerfileTemplateId,
+    dockerfileTemplateName: packageForm.dockerfileTemplateName,
+    dockerfileTemplateDescription: packageForm.dockerfileTemplateDescription,
+    dockerfileSourceType: packageForm.dockerfileSourceType,
+    dockerfileTemplateText: packageForm.dockerfileTemplateText,
+  }
+}
+
+function readDeployTemplateConfig() {
+  return {
+    packageSourceType: deployForm.packageSourceType,
+    localPackagePath: deployForm.localPackagePath,
+    serviceName: deployForm.serviceName,
+    serviceVersion: deployForm.serviceVersion,
+    imageName: deployForm.imageName,
+    imageTag: deployForm.imageTag,
+    containerName: deployForm.containerName,
+    hostPort: Number(deployForm.hostPort || 0),
+    containerPort: Number(deployForm.containerPort || 0),
+    remoteBaseDir: deployForm.remoteBaseDir,
+    remotePackageDir: deployForm.remotePackageDir,
+    restartPolicy: deployForm.restartPolicy,
+    envText: deployForm.envText,
+    extraArgs: deployForm.extraArgs,
+    containerConflictStrategy: deployForm.containerConflictStrategy,
+    imageCleanupStrategy: deployForm.imageCleanupStrategy,
+    directoryPermissionMode: deployForm.directoryPermissionMode,
+  }
+}
+
+function deriveDeployConfigFromPackage() {
+  const serviceName = String(packageForm.serviceName || deployForm.serviceName)
+  const version = String(packageForm.serviceVersion || deployForm.serviceVersion)
+
+  return {
+    ...readDeployTemplateConfig(),
+    packageSourceType: 'template',
+    localPackagePath: '',
+    serviceName,
+    serviceVersion: version,
+    imageName: serviceName.toLowerCase(),
+    imageTag: version,
+    containerName: serviceName,
+    hostPort: Number(deployForm.hostPort || packageForm.servicePort || 8080),
+    containerPort: Number(packageForm.servicePort || deployForm.containerPort || 8080),
+  }
+}
+
+function derivePackageConfigFromDeploy() {
+  return {
+    ...readPackageTemplateConfig(),
+    serviceName: deployForm.serviceName || packageForm.serviceName,
+    serviceVersion: deployForm.serviceVersion || deployForm.imageTag || packageForm.serviceVersion,
+    servicePort: Number(deployForm.containerPort || packageForm.servicePort || 8080),
+  }
+}
+
 /**
  * 把表单状态转换成主进程保存服务器需要的 payload。
  */
@@ -1490,6 +1934,19 @@ function toDisplayLines(output) {
   return output.replace(/\r\n/g, '\n').split('\n')
 }
 
+function normalizeCommandTimeoutSeconds(value) {
+  const seconds = Number(value || DEFAULT_COMMAND_TIMEOUT_SECONDS)
+
+  if (!Number.isFinite(seconds)) {
+    return DEFAULT_COMMAND_TIMEOUT_SECONDS
+  }
+
+  return Math.min(
+    Math.max(Math.round(seconds), MIN_COMMAND_TIMEOUT_SECONDS),
+    MAX_COMMAND_TIMEOUT_SECONDS,
+  )
+}
+
 function readTemplateMetadata(template) {
   if (!template) {
     return {}
@@ -1516,6 +1973,20 @@ function upsertSavedDockerfileTemplate(template) {
   }
 
   savedDockerfileTemplates.value.sort((left, right) => {
+    return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
+  })
+}
+
+function upsertServiceTemplate(template) {
+  const index = serviceTemplates.value.findIndex((item) => item.id === template.id)
+
+  if (index >= 0) {
+    serviceTemplates.value.splice(index, 1, template)
+  } else {
+    serviceTemplates.value.unshift(template)
+  }
+
+  serviceTemplates.value.sort((left, right) => {
     return String(right.updatedAt || '').localeCompare(String(left.updatedAt || ''))
   })
 }
@@ -1649,8 +2120,12 @@ export function useWorkspaceSession() {
     commandRuns,
     deployments,
     savedDockerfileTemplates,
+    serviceTemplates,
+    workspaceSettings,
     dockerfileTemplateOptions,
     selectedDockerfileTemplate,
+    selectedServiceTemplate,
+    selectedServiceTemplateId,
     activeServerId,
     pinnedServerId,
     storageInfo,
@@ -1659,12 +2134,16 @@ export function useWorkspaceSession() {
     isLoadingStoredData,
     isSavingServer,
     isSavingDockerfileTemplate,
+    isSavingServiceTemplate,
+    isSavingSettings,
     deletingDeploymentIds,
+    settingsResult,
     logs,
     hasElectronBridge,
     hasStorageBridge,
     hasDeploymentBridge,
     hasDockerfileTemplateBridge,
+    hasServiceTemplateBridge,
     isCreatingServer,
     needsRetest,
     canExecuteCommand,
@@ -1675,6 +2154,7 @@ export function useWorkspaceSession() {
     deployHint,
     loadStoredData,
     loadDockerfileTemplates,
+    loadServiceTemplates,
     selectJarFile,
     selectDeployPackageFile,
     refreshPackagePreview,
@@ -1687,9 +2167,13 @@ export function useWorkspaceSession() {
     deleteDeploymentRecord,
     saveCurrentServer,
     selectDockerfileTemplate,
+    selectServiceTemplate,
     applyImportedDockerfileTemplate,
     saveDockerfileTemplate,
     deleteDockerfileTemplate,
+    saveServiceTemplateFromPackage,
+    saveServiceTemplateFromDeploy,
+    deleteServiceTemplate,
     createNewServer,
     pinServer,
     selectSavedServer,
@@ -1697,6 +2181,8 @@ export function useWorkspaceSession() {
     updateCommandText,
     updatePackageForm,
     updateDeployForm,
+    updateWorkspaceSettings,
+    saveWorkspaceSettings,
     testConnection,
     executeCommand,
     selectPrivateKeyFile,

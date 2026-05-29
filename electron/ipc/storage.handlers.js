@@ -20,6 +20,11 @@ import {
   listDockerfileTemplates,
   saveDockerfileTemplate,
 } from '../services/database/repositories/dockerfileTemplateRepository.js'
+import {
+  deleteServiceTemplate,
+  listServiceTemplates,
+  saveServiceTemplate,
+} from '../services/database/repositories/serviceTemplateRepository.js'
 import { getSetting, setSetting } from '../services/database/repositories/settingsRepository.js'
 import { decryptPassword, encryptPassword } from '../services/credential/passwordVault.js'
 
@@ -85,6 +90,18 @@ export function registerStorageHandlers(ipcMain) {
 
   ipcMain.handle('dockerfile-templates:delete', async (_event, id) => {
     return deleteDockerfileTemplate(id)
+  })
+
+  ipcMain.handle('service-templates:list', async () => {
+    return listServiceTemplates()
+  })
+
+  ipcMain.handle('service-templates:save', async (_event, template) => {
+    return saveServiceTemplate(template)
+  })
+
+  ipcMain.handle('service-templates:delete', async (_event, id) => {
+    return deleteServiceTemplate(id)
   })
 
   ipcMain.handle('settings:get', async (_event, key, fallbackValue) => {

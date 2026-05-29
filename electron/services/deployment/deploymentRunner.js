@@ -14,6 +14,8 @@ const DEFAULT_MOUNT_TARGETS = [
   { key: 'uploads', containerPath: '/app/uploads' },
   { key: 'config', containerPath: '/app/config' },
 ]
+const PORT_CHECK_DOCKER_MARKER = '__CENDLINK_DOCKER_PORT_MATCHES__'
+const PORT_CHECK_LISTENER_MARKER = '__CENDLINK_HOST_PORT_LISTENERS__'
 
 /**
  * 执行一条完整的远程部署流水：
@@ -51,6 +53,16 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       runner: async () => {
         await execCommand(client, `mkdir -p ${shellQuote(remotePackageDir)}`)
         await execCommand(client, 'docker --version')
+      },
+    })
+
+    await runStep({
+      logs,
+      steps,
+      name: '检查端口占用',
+      command: buildPortCheckLogCommand(normalized.hostPort),
+      runner: async () => {
+        return checkPortAvailability(client, normalized)
       },
     })
 
@@ -459,6 +471,38 @@ async function detectContainer(client, containerName) {
   return result.stdout.trim().split(/\r?\n/).includes(containerName)
 }
 
+async function checkPortAvailability(client, config) {
+  const result = await execCommand(client, buildPortCheckCommand(config.hostPort))
+  const usage = parsePortCheckOutput(result.stdout)
+  const sameContainerMatches = usage.dockerMatches.filter((item) => item.name === config.containerName)
+  const otherDockerMatches = usage.dockerMatches.filter((item) => item.name !== config.containerName)
+
+  if (otherDockerMatches.length) {
+    const names = otherDockerMatches.map((item) => item.name).join('、')
+    throw new Error(`端口 ${config.hostPort} 已被容器 ${names} 占用，请更换宿主机端口或先释放该容器`)
+  }
+
+  if (sameContainerMatches.length) {
+    if (config.containerConflictStrategy === 'auto') {
+      return {
+        stdout: `端口 ${config.hostPort} 当前由待替换容器 ${config.containerName} 使用，自动替换策略允许继续`,
+        stderr: '',
+      }
+    }
+
+    throw new Error(`端口 ${config.hostPort} 已由同名容器 ${config.containerName} 占用，请改为自动替换或更换宿主机端口`)
+  }
+
+  if (usage.listenerLines.length) {
+    throw new Error(`端口 ${config.hostPort} 已被远程主机进程占用: ${summarizePortListeners(usage.listenerLines)}`)
+  }
+
+  return {
+    stdout: `端口 ${config.hostPort} 未检测到占用`,
+    stderr: '',
+  }
+}
+
 async function cleanupOldImages(client, config, currentImageRef, logs, steps) {
   if (config.imageCleanupStrategy !== 'auto') {
     return {
@@ -626,6 +670,81 @@ function inferServiceVersion(localPackagePath) {
 
 function inferContainerPort(input) {
   return Number(input.containerPort || input.servicePort || input.packageServicePort || 0)
+}
+
+function buildPortCheckLogCommand(port) {
+  return `docker ps --filter publish=${port} && ss/netstat/lsof :${port}`
+}
+
+function buildPortCheckCommand(port) {
+  return [
+    `PORT=${shellQuote(String(port))}`,
+    `echo ${shellQuote(PORT_CHECK_DOCKER_MARKER)}`,
+    `docker ps --filter "publish=$PORT" --format "{{.Names}}\t{{.Image}}\t{{.Ports}}" 2>/dev/null || true`,
+    `echo ${shellQuote(PORT_CHECK_LISTENER_MARKER)}`,
+    `if command -v ss >/dev/null 2>&1; then`,
+    `  (ss -ltnp 2>/dev/null || ss -ltn 2>/dev/null) | awk -v port="$PORT" 'NR > 1 && $4 ~ ":" port "$" { print }' || true`,
+    `elif command -v netstat >/dev/null 2>&1; then`,
+    `  (netstat -ltnp 2>/dev/null || netstat -ltn 2>/dev/null) | awk -v port="$PORT" 'NR > 2 && $4 ~ ":" port "$" { print }' || true`,
+    `elif command -v lsof >/dev/null 2>&1; then`,
+    `  lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null || true`,
+    `fi`,
+  ].join('\n')
+}
+
+function parsePortCheckOutput(output = '') {
+  const dockerLines = []
+  const listenerLines = []
+  let section = ''
+
+  for (const rawLine of String(output || '').replace(/\r\n/g, '\n').split('\n')) {
+    const line = rawLine.trim()
+
+    if (!line) {
+      continue
+    }
+
+    if (line === PORT_CHECK_DOCKER_MARKER) {
+      section = 'docker'
+      continue
+    }
+
+    if (line === PORT_CHECK_LISTENER_MARKER) {
+      section = 'listener'
+      continue
+    }
+
+    if (section === 'docker') {
+      dockerLines.push(line)
+    }
+
+    if (section === 'listener' && !isPortListenerHeader(line)) {
+      listenerLines.push(line)
+    }
+  }
+
+  return {
+    dockerMatches: dockerLines.map(parseDockerPortLine).filter((item) => item.name),
+    listenerLines,
+  }
+}
+
+function parseDockerPortLine(line) {
+  const [name = '', image = '', ports = ''] = line.split('\t')
+
+  return {
+    name: name.trim(),
+    image: image.trim(),
+    ports: ports.trim(),
+  }
+}
+
+function isPortListenerHeader(line) {
+  return /^COMMAND\s+PID\b/i.test(line) || /^Proto\s+/i.test(line) || /^State\s+/i.test(line)
+}
+
+function summarizePortListeners(lines) {
+  return lines.slice(0, 2).join(' | ').slice(0, 220)
 }
 
 function appendLog(logs, message) {
