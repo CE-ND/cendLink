@@ -1,10 +1,16 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
+import AppSelect from '../../../components/ui/AppSelect.vue'
 
 const CONTAINER_LIST_COMMAND =
   "docker ps -a --format '{{.ID}}|||{{.Names}}|||{{.Image}}|||{{.Status}}|||{{.Ports}}|||{{.CreatedAt}}'"
 const MAX_LOG_LINES = 5000
+const logTailOptions = [
+  { value: 100, label: '100' },
+  { value: 300, label: '300' },
+  { value: 1000, label: '1000' },
+]
 
 const {
   form,
@@ -562,16 +568,12 @@ function formatStreamError(error) {
       <div class="container-log-toolbar">
         <label class="log-tail-select">
           <span>行数</span>
-          <select
-            :value="logTail"
-            class="select-input"
+          <AppSelect
+            :model-value="logTail"
+            :options="logTailOptions"
             :disabled="isFollowing"
-            @change="handleTailChange($event.target.value)"
-          >
-            <option :value="100">100</option>
-            <option :value="300">300</option>
-            <option :value="1000">1000</option>
-          </select>
+            @change="handleTailChange"
+          />
         </label>
 
         <button

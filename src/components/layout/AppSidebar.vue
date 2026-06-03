@@ -40,6 +40,7 @@ const navigationItems = [
   { routeName: 'servers', label: '服务器' },
   { routeName: 'package', label: '镜像打包' },
   { routeName: 'deploy', label: '远程部署' },
+  { routeName: 'frontend', label: '前端上传' },
   { routeName: 'containers', label: '容器日志' },
   { routeName: 'commands', label: '命令' },
   { routeName: 'history', label: '部署记录' },

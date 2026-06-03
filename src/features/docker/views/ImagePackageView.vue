@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
+import AppSelect from '../../../components/ui/AppSelect.vue'
 import { buildBaseImage, parseDockerfileText } from '../../../shared/dockerfileTemplates.js'
 
 // 本地镜像包生成页，负责展示 Jar -> Docker 镜像压缩包的完整流程。
@@ -54,6 +55,39 @@ const builtinTemplateOptions = computed(() => {
 
 const customTemplateOptions = computed(() => {
   return dockerfileTemplateOptions.value.filter((template) => template.sourceType !== 'builtin')
+})
+
+const serviceTemplateSelectOptions = computed(() => {
+  return [
+    { value: '', label: '未选择服务模板' },
+    ...serviceTemplates.value.map((template) => ({
+      value: template.id,
+      label: template.name,
+    })),
+  ]
+})
+
+const dockerfileSelectOptions = computed(() => {
+  return [
+    {
+      label: '内置模板',
+      options: builtinTemplateOptions.value.map((template) => ({
+        value: template.id,
+        label: template.name,
+      })),
+    },
+    ...(customTemplateOptions.value.length
+      ? [
+          {
+            label: '自定义模板',
+            options: customTemplateOptions.value.map((template) => ({
+              value: template.id,
+              label: template.name,
+            })),
+          },
+        ]
+      : []),
+  ]
 })
 
 const selectedTemplateDescription = computed(() => {
@@ -336,21 +370,12 @@ onBeforeUnmount(() => {
           <div class="field">
             <span>服务模板</span>
             <div class="template-picker-row service-template-row">
-              <select
-                class="select-input"
-                :value="selectedServiceTemplateId"
+              <AppSelect
+                :model-value="selectedServiceTemplateId"
+                :options="serviceTemplateSelectOptions"
                 :disabled="!hasServiceTemplateBridge"
-                @change="selectServiceTemplate($event.target.value, 'package')"
-              >
-                <option value="">未选择服务模板</option>
-                <option
-                  v-for="template in serviceTemplates"
-                  :key="template.id"
-                  :value="template.id"
-                >
-                  {{ template.name }}
-                </option>
-              </select>
+                @change="selectServiceTemplate($event, 'package')"
+              />
               <button
                 type="button"
                 class="secondary-button compact-button"
@@ -385,30 +410,11 @@ onBeforeUnmount(() => {
           <div class="field">
             <span>Dockerfile 模板</span>
             <div class="template-picker-row">
-              <select
-                class="select-input"
-                :value="packageForm.dockerfileTemplateId"
-                @change="selectDockerfileTemplate($event.target.value)"
-              >
-                <optgroup label="内置模板">
-                  <option
-                    v-for="template in builtinTemplateOptions"
-                    :key="template.id"
-                    :value="template.id"
-                  >
-                    {{ template.name }}
-                  </option>
-                </optgroup>
-                <optgroup v-if="customTemplateOptions.length" label="自定义模板">
-                  <option
-                    v-for="template in customTemplateOptions"
-                    :key="template.id"
-                    :value="template.id"
-                  >
-                    {{ template.name }}
-                  </option>
-                </optgroup>
-              </select>
+              <AppSelect
+                :model-value="packageForm.dockerfileTemplateId"
+                :options="dockerfileSelectOptions"
+                @change="selectDockerfileTemplate"
+              />
               <button type="button" class="secondary-button" @click="openDockerfileImport">
                 导入 Dockerfile
               </button>

@@ -143,6 +143,91 @@ export async function recordRemoteDeployment(input = {}) {
 }
 
 /**
+ * 保存一次前端静态资源上传记录。
+ */
+export async function recordFrontendUpload(input = {}) {
+  const db = await getDatabase()
+  const now = new Date().toISOString()
+  const normalized = normalizeFrontendUploadInput(input, now)
+
+  db.prepare(
+    `
+      INSERT INTO deployments (
+        id,
+        project_id,
+        server_id,
+        status,
+        artifact_name,
+        deploy_path,
+        remote_package_path,
+        run_command,
+        metadata_json,
+        started_at,
+        finished_at,
+        duration_ms,
+        error_summary,
+        log_file_path,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+  ).run(
+    normalized.id,
+    normalized.projectId,
+    normalized.serverId,
+    normalized.status,
+    normalized.artifactName,
+    normalized.deployPath,
+    normalized.remotePackagePath,
+    normalized.runCommand,
+    normalized.metadataJson,
+    normalized.startedAt,
+    normalized.finishedAt,
+    normalized.durationMs,
+    normalized.errorSummary,
+    normalized.logFilePath,
+    normalized.createdAt,
+    normalized.updatedAt,
+  )
+
+  for (const step of normalized.steps) {
+    db.prepare(
+      `
+        INSERT INTO deployment_steps (
+          id,
+          deployment_id,
+          step_order,
+          name,
+          status,
+          command,
+          exit_code,
+          started_at,
+          finished_at,
+          duration_ms,
+          message
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    ).run(
+      randomUUID(),
+      normalized.id,
+      step.stepOrder,
+      step.name,
+      step.status,
+      step.command,
+      step.exitCode,
+      step.startedAt,
+      step.finishedAt,
+      step.durationMs,
+      step.message,
+    )
+  }
+
+  return getDeployment(normalized.id)
+}
+
+/**
  * 按时间倒序读取部署/打包记录。
  */
 export async function listDeployments(limit = 100) {
@@ -287,6 +372,68 @@ function normalizeRemoteDeploymentInput(input, now) {
             finishedAt: input.finishedAt ? String(input.finishedAt) : now,
             durationMs: Number.isFinite(durationMs) ? durationMs : 0,
             message: input.ok ? '部署成功' : errorSummary,
+          },
+        ],
+  }
+}
+
+function normalizeFrontendUploadInput(input, now) {
+  const durationMs = Number(input.durationMs || 0)
+  const steps = normalizeDeploymentSteps(input.steps)
+  const projectName = String(input.projectName || input.projectDir || 'frontend-project').trim()
+  const remoteTargetDir = String(input.remoteTargetDir || '').trim()
+  const remoteArchivePath = String(input.remoteArchivePath || '').trim()
+  const artifactName = String(input.localArchiveName || input.artifactName || projectName || 'frontend-upload')
+  const runCommand =
+    String(input.runCommand || '').trim() ||
+    `frontend upload ${remoteArchivePath || artifactName} -> ${remoteTargetDir || '-'}`
+  const errorSummary = input.ok ? String(input.backupDir || '').trim() : String(input.message || '前端上传失败')
+
+  return {
+    id: String(input.id || '').trim() || randomUUID(),
+    projectId: String(projectName || input.projectDir || artifactName),
+    serverId: input.serverId ? String(input.serverId) : null,
+    status: input.ok ? 'frontend_success' : 'frontend_failed',
+    artifactName,
+    deployPath: remoteTargetDir,
+    remotePackagePath: remoteArchivePath,
+    runCommand,
+    metadataJson: JSON.stringify({
+      recordType: 'frontend-upload',
+      projectName,
+      projectDir: input.projectDir || '',
+      localArchivePath: input.localArchivePath || '',
+      localArchiveName: input.localArchiveName || '',
+      remoteArchivePath,
+      remoteTargetDir,
+      remoteBaseDir: input.remoteBaseDir || '',
+      extractStrategy: input.extractStrategy || '',
+      keepRemoteArchive: Boolean(input.keepRemoteArchive),
+      entryFile: input.entryFile || '',
+      publishedSourceDir: input.publishedSourceDir || '',
+      backupDir: input.backupDir || '',
+      publishedFileCount: Number(input.publishedFileCount || 0),
+    }),
+    startedAt: input.startedAt ? String(input.startedAt) : new Date(Date.now() - durationMs).toISOString(),
+    finishedAt: input.finishedAt ? String(input.finishedAt) : now,
+    durationMs: Number.isFinite(durationMs) ? durationMs : 0,
+    errorSummary,
+    logFilePath: '',
+    createdAt: now,
+    updatedAt: now,
+    steps: steps.length
+      ? steps
+      : [
+          {
+            stepOrder: 1,
+            name: '前端上传',
+            status: input.ok ? 'success' : 'failed',
+            command: runCommand,
+            exitCode: input.ok ? 0 : 1,
+            startedAt: input.startedAt ? String(input.startedAt) : now,
+            finishedAt: input.finishedAt ? String(input.finishedAt) : now,
+            durationMs: Number.isFinite(durationMs) ? durationMs : 0,
+            message: input.ok ? '前端上传成功' : errorSummary,
           },
         ],
   }

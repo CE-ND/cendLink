@@ -2,6 +2,31 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 // 暴露给 Vue 渲染进程的安全 API。渲染层只能通过这些方法访问主进程能力。
 const api = {
+  windowControls: {
+    minimize() {
+      return ipcRenderer.invoke('window:minimize')
+    },
+    toggleMaximize() {
+      return ipcRenderer.invoke('window:toggle-maximize')
+    },
+    close() {
+      return ipcRenderer.invoke('window:close')
+    },
+    isMaximized() {
+      return ipcRenderer.invoke('window:is-maximized')
+    },
+    onMaximizedChange(callback) {
+      const listener = (_event, isMaximized) => {
+        callback(Boolean(isMaximized))
+      }
+
+      ipcRenderer.on('window:maximized-changed', listener)
+
+      return () => {
+        ipcRenderer.removeListener('window:maximized-changed', listener)
+      }
+    },
+  },
   // 本地数据目录、数据库路径、日志目录等运行时信息。
   data: {
     getStorageInfo() {
@@ -32,6 +57,17 @@ const api = {
     },
     run(connection, config) {
       return ipcRenderer.invoke('deployment:run', { connection, config })
+    },
+  },
+  frontendUpload: {
+    selectArchiveFile() {
+      return ipcRenderer.invoke('frontend-upload:select-archive-file')
+    },
+    preview(config) {
+      return ipcRenderer.invoke('frontend-upload:preview', config)
+    },
+    run(connection, config) {
+      return ipcRenderer.invoke('frontend-upload:run', { connection, config })
     },
   },
   // SSH 相关能力：连接测试、执行命令、选择本地私钥文件。
@@ -92,6 +128,9 @@ const api = {
     recordRemoteDeployment(deployment) {
       return ipcRenderer.invoke('history:record-remote-deployment', deployment)
     },
+    recordFrontendUpload(upload) {
+      return ipcRenderer.invoke('history:record-frontend-upload', upload)
+    },
     deleteDeployment(id) {
       return ipcRenderer.invoke('history:delete-deployment', id)
     },
@@ -118,6 +157,18 @@ const api = {
     },
     delete(id) {
       return ipcRenderer.invoke('service-templates:delete', id)
+    },
+  },
+  // 前端项目库：保存静态站点的 Nginx 目录、上传策略和最近包。
+  frontendProjects: {
+    list() {
+      return ipcRenderer.invoke('frontend-projects:list')
+    },
+    save(project) {
+      return ipcRenderer.invoke('frontend-projects:save', project)
+    },
+    delete(id) {
+      return ipcRenderer.invoke('frontend-projects:delete', id)
     },
   },
   // 应用设置键值存储，value 会以 JSON 形式写入数据库。

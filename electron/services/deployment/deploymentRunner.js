@@ -235,8 +235,8 @@ async function normalizeDeploymentInput(input = {}) {
   const imageTag = normalizeImageTag(input.imageTag || serviceVersion)
   const imageRef = `${imageName}:${imageTag}`
   const containerName = normalizeName(input.containerName || imageName)
-  const hostPort = normalizePort(input.hostPort)
   const containerPort = normalizePort(input.containerPort || input.servicePort || inferContainerPort(input))
+  const hostPort = normalizePort(input.hostPort || containerPort)
   const remoteBaseDir = String(input.remoteBaseDir || DEFAULT_REMOTE_BASE_DIR).trim() || DEFAULT_REMOTE_BASE_DIR
   const remotePackageDir =
     String(input.remotePackageDir || DEFAULT_REMOTE_PACKAGE_DIR).trim() || DEFAULT_REMOTE_PACKAGE_DIR
@@ -623,7 +623,7 @@ function normalizeContainerStrategy(value) {
 }
 
 function normalizeImageCleanupStrategy(value) {
-  return value === 'auto' ? 'auto' : value === 'confirm' ? 'confirm' : 'keep'
+  return value === 'keep' ? 'keep' : value === 'confirm' ? 'confirm' : 'auto'
 }
 
 function normalizeDirectoryPermissionMode(value) {

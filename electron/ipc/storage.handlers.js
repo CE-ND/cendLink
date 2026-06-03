@@ -12,6 +12,7 @@ import {
 import {
   deleteDeployment,
   listDeployments,
+  recordFrontendUpload,
   recordImagePackage,
   recordRemoteDeployment,
 } from '../services/database/repositories/deploymentRepository.js'
@@ -25,6 +26,11 @@ import {
   listServiceTemplates,
   saveServiceTemplate,
 } from '../services/database/repositories/serviceTemplateRepository.js'
+import {
+  deleteFrontendProject,
+  listFrontendProjects,
+  saveFrontendProject,
+} from '../services/database/repositories/frontendProjectRepository.js'
 import { getSetting, setSetting } from '../services/database/repositories/settingsRepository.js'
 import { decryptPassword, encryptPassword } from '../services/credential/passwordVault.js'
 
@@ -76,6 +82,10 @@ export function registerStorageHandlers(ipcMain) {
     return recordRemoteDeployment(deployment)
   })
 
+  ipcMain.handle('history:record-frontend-upload', async (_event, upload) => {
+    return recordFrontendUpload(upload)
+  })
+
   ipcMain.handle('history:delete-deployment', async (_event, id) => {
     return deleteDeployment(id)
   })
@@ -102,6 +112,18 @@ export function registerStorageHandlers(ipcMain) {
 
   ipcMain.handle('service-templates:delete', async (_event, id) => {
     return deleteServiceTemplate(id)
+  })
+
+  ipcMain.handle('frontend-projects:list', async () => {
+    return listFrontendProjects()
+  })
+
+  ipcMain.handle('frontend-projects:save', async (_event, project) => {
+    return saveFrontendProject(project)
+  })
+
+  ipcMain.handle('frontend-projects:delete', async (_event, id) => {
+    return deleteFrontendProject(id)
   })
 
   ipcMain.handle('settings:get', async (_event, key, fallbackValue) => {

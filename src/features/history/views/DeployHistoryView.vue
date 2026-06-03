@@ -15,18 +15,44 @@ const deployRecords = computed(() => {
   return deployments.value.filter(isDeployRecord)
 })
 
+const frontendRecords = computed(() => {
+  return deployments.value.filter(isFrontendRecord)
+})
+
 const visibleRecords = computed(() => {
-  return activeRecordType.value === 'package' ? packageRecords.value : deployRecords.value
+  if (activeRecordType.value === 'package') {
+    return packageRecords.value
+  }
+
+  if (activeRecordType.value === 'frontend') {
+    return frontendRecords.value
+  }
+
+  return deployRecords.value
 })
 
 const activeTitle = computed(() => {
-  return activeRecordType.value === 'package' ? '打包记录' : '部署记录'
+  if (activeRecordType.value === 'package') {
+    return '打包记录'
+  }
+
+  if (activeRecordType.value === 'frontend') {
+    return '前端上传记录'
+  }
+
+  return '部署记录'
 })
 
 const activeEmptyText = computed(() => {
-  return activeRecordType.value === 'package'
-    ? '生成镜像包后，会在这里看到本地 tar.gz 打包记录。'
-    : '执行远程部署后，会在这里看到服务器部署记录。'
+  if (activeRecordType.value === 'package') {
+    return '生成镜像包后，会在这里看到本地 tar.gz 打包记录。'
+  }
+
+  if (activeRecordType.value === 'frontend') {
+    return '上传前端压缩包后，会在这里看到静态资源发布记录。'
+  }
+
+  return '执行远程部署后，会在这里看到服务器部署记录。'
 })
 
 function isPackageRecord(item) {
@@ -37,9 +63,17 @@ function isDeployRecord(item) {
   return item?.metadata?.recordType === 'remote-deployment' || String(item?.status || '').startsWith('deploy_')
 }
 
+function isFrontendRecord(item) {
+  return item?.metadata?.recordType === 'frontend-upload' || String(item?.status || '').startsWith('frontend_')
+}
+
 function getRecordTitle(item) {
   if (isPackageRecord(item)) {
     return item.metadata?.serviceName || item.projectId || item.artifactName || '镜像打包记录'
+  }
+
+  if (isFrontendRecord(item)) {
+    return item.metadata?.projectName || item.projectId || item.artifactName || '前端上传记录'
   }
 
   return item.metadata?.containerName || item.artifactName || item.projectId || '远程部署记录'
@@ -50,6 +84,12 @@ function getRecordSummary(item) {
     const imageRef = item.metadata?.imageRef || item.projectId || '-'
     const version = item.metadata?.serviceVersion || '-'
     return `${imageRef} · 版本 ${version}`
+  }
+
+  if (isFrontendRecord(item)) {
+    const projectName = item.metadata?.projectName || item.projectId || '-'
+    const remoteTargetDir = item.metadata?.remoteTargetDir || item.deployPath || '-'
+    return `${projectName} · ${remoteTargetDir}`
   }
 
   const imageRef = item.metadata?.imageRef || item.projectId || '-'
@@ -68,6 +108,15 @@ function getDetailItems(item) {
     ]
   }
 
+  if (isFrontendRecord(item)) {
+    return [
+      { label: '远程包', value: item.remotePackagePath || item.metadata?.remoteArchivePath || '-', wide: true },
+      { label: '发布目录', value: item.deployPath || item.metadata?.remoteTargetDir || '-', wide: true },
+      { label: '策略', value: item.metadata?.extractStrategy || '-' },
+      { label: '备份', value: item.metadata?.backupDir || '-', wide: true },
+    ]
+  }
+
   return [
     { label: '远程包', value: item.remotePackagePath || item.metadata?.remotePackagePath || '-' },
     { label: '发布目录', value: item.deployPath || item.metadata?.remoteReleaseDir || '-' },
@@ -77,8 +126,8 @@ function getDetailItems(item) {
 
 function getStatusClass(status) {
   return {
-    success: ['package_success', 'success', 'deploy_success'].includes(status),
-    failed: ['package_failed', 'failed', 'deploy_failed'].includes(status),
+    success: ['package_success', 'success', 'deploy_success', 'frontend_success'].includes(status),
+    failed: ['package_failed', 'failed', 'deploy_failed', 'frontend_failed'].includes(status),
   }
 }
 </script>
@@ -103,6 +152,15 @@ function getStatusClass(status) {
         >
           部署记录
           <span class="history-switch-count">{{ deployRecords.length }}</span>
+        </button>
+        <button
+          type="button"
+          class="history-switch-button"
+          :class="{ active: activeRecordType === 'frontend' }"
+          @click="activeRecordType = 'frontend'"
+        >
+          前端上传
+          <span class="history-switch-count">{{ frontendRecords.length }}</span>
         </button>
         <button
           type="button"

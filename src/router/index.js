@@ -4,6 +4,7 @@ import ContainerLogsView from '../features/containers/views/ContainerLogsView.vu
 import ServersView from '../features/connections/views/ServersView.vue'
 import DeploymentView from '../features/deploy/views/DeploymentView.vue'
 import ImagePackageView from '../features/docker/views/ImagePackageView.vue'
+import FrontendUploadView from '../features/frontend/views/FrontendUploadView.vue'
 import DeployHistoryView from '../features/history/views/DeployHistoryView.vue'
 import SettingsView from '../features/settings/views/SettingsView.vue'
 import AppShell from '../layouts/AppShell.vue'
@@ -32,6 +33,15 @@ const routes = [
         meta: {
           eyebrow: 'Remote Deploy',
           title: '远程部署',
+        },
+      },
+      {
+        path: 'frontend',
+        name: 'frontend',
+        component: FrontendUploadView,
+        meta: {
+          eyebrow: 'Frontend Upload',
+          title: '前端上传',
         },
       },
       {

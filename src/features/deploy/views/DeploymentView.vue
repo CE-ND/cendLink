@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { gsap } from 'gsap'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
+import AppSelect from '../../../components/ui/AppSelect.vue'
 
 // 远程部署页：选择镜像包、编辑部署参数、实时预览 docker run 并执行部署。
 const {
@@ -32,6 +33,28 @@ const {
 
 const emit = defineEmits(['open-logs'])
 
+const restartPolicyOptions = [
+  { value: 'unless-stopped', label: 'unless-stopped' },
+  { value: 'always', label: 'always' },
+  { value: 'on-failure', label: 'on-failure' },
+  { value: 'no', label: 'no' },
+]
+
+const containerConflictOptions = [
+  { value: 'auto', label: '自动替换' },
+  { value: 'abort', label: '发现冲突终止' },
+]
+
+const imageCleanupOptions = [
+  { value: 'auto', label: '自动清理' },
+  { value: 'keep', label: '保留旧镜像' },
+]
+
+const directoryPermissionOptions = [
+  { value: 'none', label: '不处理' },
+  { value: 'chmod777', label: '兼容模式 chmod 777' },
+]
+
 const selectedServer = computed(() => {
   return savedServers.value.find((item) => item.id === activeServerId.value) || null
 })
@@ -60,20 +83,12 @@ const selectedPackageRecord = computed(() => {
   return packageHistory.value.find((item) => item.deployPath === deployForm.localPackagePath) || null
 })
 
-const currentPackageFileName = computed(() => {
-  return getFileName(deployForm.localPackagePath)
-})
-
 const currentPackageSource = computed(() => {
   if (!deployForm.localPackagePath) {
     return '等待选择'
   }
 
   return selectedPackageRecord.value ? '来自打包记录' : '手动选择'
-})
-
-const currentImageRef = computed(() => {
-  return deployPreview.value?.imageRef || [deployForm.imageName, deployForm.imageTag].filter(Boolean).join(':') || '-'
 })
 
 const selectedServiceTemplateSummary = computed(() => {
@@ -120,22 +135,13 @@ const deploySummaryItems = computed(() => {
   ]
 })
 
-const selectedPackageMeta = computed(() => {
-  const metadata = selectedPackageRecord.value?.metadata || {}
-
+const serviceTemplateSelectOptions = computed(() => {
   return [
-    {
-      label: '镜像',
-      value: metadata.imageRef || currentImageRef.value,
-    },
-    {
-      label: '版本',
-      value: metadata.serviceVersion || deployForm.serviceVersion || '-',
-    },
-    {
-      label: '端口',
-      value: metadata.servicePort || deployForm.containerPort || '-',
-    },
+    { value: '', label: '未选择服务模板' },
+    ...serviceTemplates.value.map((template) => ({
+      value: template.id,
+      label: template.name,
+    })),
   ]
 })
 
@@ -242,7 +248,7 @@ function animateSummary() {
   }
 
   gsap.fromTo(
-    selector('.deploy-package-summary'),
+    selector('.deploy-package-picker-row'),
     { autoAlpha: 0.82, y: 4 },
     { autoAlpha: 1, y: 0, duration: 0.2, ease: 'power3.out', overwrite: 'auto' },
   )
@@ -271,7 +277,7 @@ onMounted(() => {
   }
 
   deployGsapContext = gsap.context(() => {
-    gsap.from('.deploy-package-summary', {
+    gsap.from('.deploy-package-picker-row', {
       autoAlpha: 0,
       y: 8,
       duration: 0.24,
@@ -356,21 +362,12 @@ watch(isAdvancedOpen, async (isOpen) => {
             </div>
 
             <div class="template-picker-row service-template-row">
-              <select
-                class="select-input"
-                :value="selectedServiceTemplateId"
+              <AppSelect
+                :model-value="selectedServiceTemplateId"
+                :options="serviceTemplateSelectOptions"
                 :disabled="!hasServiceTemplateBridge"
-                @change="selectServiceTemplate($event.target.value, 'deploy')"
-              >
-                <option value="">未选择服务模板</option>
-                <option
-                  v-for="template in serviceTemplates"
-                  :key="template.id"
-                  :value="template.id"
-                >
-                  {{ template.name }}
-                </option>
-              </select>
+                @change="selectServiceTemplate($event, 'deploy')"
+              />
               <button
                 type="button"
                 class="secondary-button compact-button"
@@ -403,31 +400,25 @@ watch(isAdvancedOpen, async (isOpen) => {
             </small>
           </section>
 
-          <div class="deploy-package-summary" :class="{ empty: !deployForm.localPackagePath }">
-            <div class="deploy-summary-head">
-              <span class="field-prompt">当前镜像包</span>
+          <section class="deploy-section deploy-package-field-section">
+            <div class="deploy-section-header">
+              <div>
+                <span class="field-prompt">镜像包</span>
+                <strong>部署文件</strong>
+              </div>
               <span class="deploy-source-pill">{{ currentPackageSource }}</span>
             </div>
 
-            <div class="deploy-summary-main">
-              <strong :title="currentPackageFileName">{{ currentPackageFileName || '还没有选择镜像包' }}</strong>
-              <small :title="deployForm.localPackagePath">
-                {{ deployForm.localPackagePath || '选择 tar.gz，或从最近打包记录带入部署参数' }}
-              </small>
-            </div>
-
-            <div class="deploy-summary-footer">
-              <div class="deploy-summary-metrics">
-                <span>
-                  <small>镜像</small>
-                  <b :title="currentImageRef">{{ currentImageRef }}</b>
-                </span>
-                <span>
-                  <small>端口</small>
-                  <b>{{ deployForm.hostPort || '-' }} -> {{ deployForm.containerPort || '-' }}</b>
-                </span>
-              </div>
-
+            <div class="deploy-package-picker-row">
+              <label class="field fill">
+                <span>本地包路径</span>
+                <input
+                  :value="deployForm.localPackagePath || '还没有选择镜像包'"
+                  type="text"
+                  readonly
+                  :title="deployForm.localPackagePath || '选择 tar.gz，或从最近镜像包中选择'"
+                />
+              </label>
               <button
                 type="button"
                 class="secondary-button compact-button"
@@ -437,7 +428,7 @@ watch(isAdvancedOpen, async (isOpen) => {
                 更换
               </button>
             </div>
-          </div>
+          </section>
 
           <section class="deploy-section deploy-target-section">
             <div class="deploy-section-header">
@@ -493,6 +484,57 @@ watch(isAdvancedOpen, async (isOpen) => {
           <section class="deploy-section">
             <div class="deploy-section-header">
               <div>
+                <span class="field-prompt">容器运行</span>
+                <strong>名称、端口与重启</strong>
+              </div>
+            </div>
+
+            <div class="field-row compact-row">
+              <label class="field fill">
+                <span>容器名</span>
+                <input
+                  :value="deployForm.containerName"
+                  type="text"
+                  @input="updateDeployForm({ containerName: $event.target.value })"
+                />
+              </label>
+              <label class="field fill">
+                <span>重启策略</span>
+                <AppSelect
+                  :model-value="deployForm.restartPolicy"
+                  :options="restartPolicyOptions"
+                  @change="updateDeployForm({ restartPolicy: $event })"
+                />
+              </label>
+            </div>
+
+            <div class="field-row compact-row">
+              <label class="field fill">
+                <span>宿主机端口</span>
+                <input
+                  :value="deployForm.hostPort"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  @input="updateDeployForm({ hostPort: Number($event.target.value) })"
+                />
+              </label>
+              <label class="field fill">
+                <span>容器端口</span>
+                <input
+                  :value="deployForm.containerPort"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  @input="updateDeployForm({ containerPort: Number($event.target.value) })"
+                />
+              </label>
+            </div>
+          </section>
+
+          <section class="deploy-section">
+            <div class="deploy-section-header">
+              <div>
                 <span class="field-prompt">基础信息</span>
                 <strong>服务与镜像</strong>
               </div>
@@ -532,69 +574,6 @@ watch(isAdvancedOpen, async (isOpen) => {
                   :value="deployForm.imageTag"
                   type="text"
                   @input="updateDeployForm({ imageTag: $event.target.value })"
-                />
-              </label>
-            </div>
-
-            <div class="deploy-mini-meta">
-              <span v-for="item in selectedPackageMeta" :key="item.label">
-                <small>{{ item.label }}</small>
-                <b>{{ item.value }}</b>
-              </span>
-            </div>
-          </section>
-
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">容器运行</span>
-                <strong>名称、端口与重启</strong>
-              </div>
-            </div>
-
-            <div class="field-row compact-row">
-              <label class="field fill">
-                <span>容器名</span>
-                <input
-                  :value="deployForm.containerName"
-                  type="text"
-                  @input="updateDeployForm({ containerName: $event.target.value })"
-                />
-              </label>
-              <label class="field fill">
-                <span>重启策略</span>
-                <select
-                  :value="deployForm.restartPolicy"
-                  class="select-input"
-                  @change="updateDeployForm({ restartPolicy: $event.target.value })"
-                >
-                  <option value="unless-stopped">unless-stopped</option>
-                  <option value="always">always</option>
-                  <option value="on-failure">on-failure</option>
-                  <option value="no">no</option>
-                </select>
-              </label>
-            </div>
-
-            <div class="field-row compact-row">
-              <label class="field fill">
-                <span>宿主机端口</span>
-                <input
-                  :value="deployForm.hostPort"
-                  type="number"
-                  min="1"
-                  max="65535"
-                  @input="updateDeployForm({ hostPort: Number($event.target.value) })"
-                />
-              </label>
-              <label class="field fill">
-                <span>容器端口</span>
-                <input
-                  :value="deployForm.containerPort"
-                  type="number"
-                  min="1"
-                  max="65535"
-                  @input="updateDeployForm({ containerPort: Number($event.target.value) })"
                 />
               </label>
             </div>
@@ -642,39 +621,30 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <div class="field-row compact-row">
                   <label class="field fill">
                     <span>旧容器策略</span>
-                    <select
-                      :value="deployForm.containerConflictStrategy"
-                      class="select-input"
-                      @change="updateDeployForm({ containerConflictStrategy: $event.target.value })"
-                    >
-                      <option value="auto">自动替换</option>
-                      <option value="abort">发现冲突终止</option>
-                    </select>
+                    <AppSelect
+                      :model-value="deployForm.containerConflictStrategy"
+                      :options="containerConflictOptions"
+                      @change="updateDeployForm({ containerConflictStrategy: $event })"
+                    />
                   </label>
                   <label class="field fill">
                     <span>旧镜像策略</span>
-                    <select
-                      :value="deployForm.imageCleanupStrategy"
-                      class="select-input"
-                      @change="updateDeployForm({ imageCleanupStrategy: $event.target.value })"
-                    >
-                      <option value="keep">保留旧镜像</option>
-                      <option value="auto">自动清理</option>
-                    </select>
+                    <AppSelect
+                      :model-value="deployForm.imageCleanupStrategy"
+                      :options="imageCleanupOptions"
+                      @change="updateDeployForm({ imageCleanupStrategy: $event })"
+                    />
                   </label>
                 </div>
 
                 <div class="field-row compact-row">
                   <label class="field fill">
                     <span>目录权限策略</span>
-                    <select
-                      :value="deployForm.directoryPermissionMode"
-                      class="select-input"
-                      @change="updateDeployForm({ directoryPermissionMode: $event.target.value })"
-                    >
-                      <option value="none">不处理</option>
-                      <option value="chmod777">兼容模式 chmod 777</option>
-                    </select>
+                    <AppSelect
+                      :model-value="deployForm.directoryPermissionMode"
+                      :options="directoryPermissionOptions"
+                      @change="updateDeployForm({ directoryPermissionMode: $event })"
+                    />
                   </label>
                   <label class="field fill">
                     <span>额外参数</span>
@@ -744,6 +714,10 @@ watch(isAdvancedOpen, async (isOpen) => {
         <div>
           <dt>容器名</dt>
           <dd>{{ deployPreview?.containerName || '-' }}</dd>
+        </div>
+        <div>
+          <dt>端口映射</dt>
+          <dd>{{ deployPreview?.hostPort || '-' }} -> {{ deployPreview?.containerPort || '-' }}</dd>
         </div>
         <div class="wide">
           <dt>环境变量</dt>

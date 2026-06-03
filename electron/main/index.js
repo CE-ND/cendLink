@@ -3,8 +3,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { registerDeploymentHandlers } from '../ipc/deployment.handlers.js'
 import { registerDockerHandlers } from '../ipc/docker.handlers.js'
+import { registerFrontendUploadHandlers } from '../ipc/frontendUpload.handlers.js'
 import { registerSshHandlers } from '../ipc/ssh.handlers.js'
 import { registerStorageHandlers } from '../ipc/storage.handlers.js'
+import { bindWindowStateEvents, registerWindowHandlers } from '../ipc/window.handlers.js'
 import { initializeDatabase } from '../services/database/index.js'
 
 const { app, BrowserWindow, Menu, ipcMain, screen } = electron
@@ -33,7 +35,8 @@ function createWindow() {
     minWidth: 980,
     minHeight: 620,
     title: 'CendLink',
-    backgroundColor: '#f7f8fa',
+    frame: false,
+    backgroundColor: '#f3f5f8',
     webPreferences: {
       // preload 是渲染进程和主进程通信的安全桥，只暴露白名单 API。
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
@@ -44,6 +47,7 @@ function createWindow() {
     icon: getAppIconPath(),
   })
   mainWindow.setMenuBarVisibility(false)
+  bindWindowStateEvents(mainWindow)
 
   if (app.isPackaged) {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
@@ -63,8 +67,10 @@ app.whenReady().then(async () => {
   await initializeDatabase()
   registerDeploymentHandlers(ipcMain)
   registerDockerHandlers(ipcMain)
+  registerFrontendUploadHandlers(ipcMain)
   registerSshHandlers(ipcMain)
   registerStorageHandlers(ipcMain)
+  registerWindowHandlers(ipcMain)
   createWindow()
 
   app.on('activate', () => {
