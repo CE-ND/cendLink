@@ -135,9 +135,9 @@ function createServer() {
         </button>
       </div>
 
-      <div v-if="!servers.length" class="server-row selected">
+      <div v-if="!servers.length" class="server-row server-row-empty">
         <span class="status-dot"></span>
-        <div>
+        <div class="server-row-copy">
           <strong>{{ serverName || '默认服务器' }}</strong>
           <small>{{ serverHost || '等待填写 Host' }}</small>
         </div>

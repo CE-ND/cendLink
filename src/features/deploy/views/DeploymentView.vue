@@ -6,8 +6,6 @@ import AppSelect from '../../../components/ui/AppSelect.vue'
 
 // 远程部署页：选择镜像包、编辑部署参数、实时预览 docker run 并执行部署。
 const {
-  savedServers,
-  activeServerId,
   deployments,
   serviceTemplates,
   selectedServiceTemplate,
@@ -55,10 +53,6 @@ const directoryPermissionOptions = [
   { value: 'chmod777', label: '兼容模式 chmod 777' },
 ]
 
-const selectedServer = computed(() => {
-  return savedServers.value.find((item) => item.id === activeServerId.value) || null
-})
-
 const environmentLines = computed(() => {
   return deployPreview.value?.envVars?.map((item) => `${item.key}=${item.value}`) || []
 })
@@ -69,6 +63,7 @@ const mountLines = computed(() => {
 
 const deployFormCard = ref(null)
 const isAdvancedOpen = ref(false)
+const isPackageHistoryOpen = ref(false)
 let deployGsapContext = null
 
 const packageHistory = computed(() => {
@@ -81,6 +76,10 @@ const recentPackages = computed(() => {
 
 const selectedPackageRecord = computed(() => {
   return packageHistory.value.find((item) => item.deployPath === deployForm.localPackagePath) || null
+})
+
+const displayedHistoryPackage = computed(() => {
+  return selectedPackageRecord.value || recentPackages.value[0] || null
 })
 
 const currentPackageSource = computed(() => {
@@ -110,31 +109,6 @@ const selectedServiceTemplateSummary = computed(() => {
   return [`版本 ${version}`, deployedAt ? `部署 ${deployedAt}` : packagedAt ? `打包 ${packagedAt}` : '尚未记录流水'].join(' · ')
 })
 
-const targetServerLabel = computed(() => {
-  if (!selectedServer.value) {
-    return '未选择服务器'
-  }
-
-  return `${selectedServer.value.name} · ${selectedServer.value.host}:${selectedServer.value.port}`
-})
-
-const deploySummaryItems = computed(() => {
-  return [
-    {
-      label: '目标',
-      value: selectedServer.value ? selectedServer.value.name : '未选择',
-    },
-    {
-      label: '端口',
-      value: `${deployForm.hostPort || '-'}:${deployForm.containerPort || '-'}`,
-    },
-    {
-      label: '容器',
-      value: deployForm.containerName || '-',
-    },
-  ]
-})
-
 const serviceTemplateSelectOptions = computed(() => {
   return [
     { value: '', label: '未选择服务模板' },
@@ -161,6 +135,11 @@ function applyHistoryPackage(item) {
     containerName: serviceName || deployForm.containerName,
     containerPort: Number(metadata.servicePort || deployForm.containerPort || 8080),
   })
+  isPackageHistoryOpen.value = false
+}
+
+function togglePackageHistoryOpen() {
+  isPackageHistoryOpen.value = !isPackageHistoryOpen.value
 }
 
 async function saveCurrentServiceTemplate() {
@@ -307,7 +286,6 @@ watch(
     deployForm.hostPort,
     deployForm.containerPort,
     deployForm.containerName,
-    activeServerId.value,
   ],
   async () => {
     await nextTick()
@@ -430,28 +408,11 @@ watch(isAdvancedOpen, async (isOpen) => {
             </div>
           </section>
 
-          <section class="deploy-section deploy-target-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">目标与风险点</span>
-                <strong>部署前确认</strong>
-              </div>
-            </div>
-
-            <label class="field">
-              <span>目标服务器</span>
-              <input :value="targetServerLabel" type="text" readonly />
-            </label>
-
-            <div class="deploy-confirm-strip">
-              <span v-for="item in deploySummaryItems" :key="item.label">
-                <small>{{ item.label }}</small>
-                <b>{{ item.value }}</b>
-              </span>
-            </div>
-          </section>
-
-          <section v-if="recentPackages.length" class="deploy-section deploy-history-picks">
+          <section
+            v-if="recentPackages.length && displayedHistoryPackage"
+            class="deploy-section deploy-history-picks"
+            :class="{ expanded: isPackageHistoryOpen }"
+          >
             <div class="deploy-section-header">
               <div>
                 <span class="field-prompt">最近镜像包</span>
@@ -460,25 +421,46 @@ watch(isAdvancedOpen, async (isOpen) => {
               <span class="deploy-count-pill">{{ packageHistory.length }} 条</span>
             </div>
 
-            <div class="deploy-history-list">
-              <button
-                v-for="item in recentPackages"
-                :key="item.id"
-                type="button"
-                class="deploy-history-item"
-                :class="{ active: deployForm.localPackagePath === item.deployPath }"
-                @click="applyHistoryPackage(item)"
-              >
-                <span class="deploy-history-copy">
-                  <strong>{{ getPackageTitle(item) }}</strong>
-                  <small :title="item.deployPath">{{ getPackageSubtitle(item) }}</small>
-                </span>
-                <span class="deploy-history-side">
-                  <small>{{ formatRecordTime(item.createdAt) }}</small>
-                  <b>{{ deployForm.localPackagePath === item.deployPath ? '已选' : '选择' }}</b>
-                </span>
-              </button>
-            </div>
+            <button
+              type="button"
+              class="deploy-history-trigger"
+              :class="{ active: deployForm.localPackagePath === displayedHistoryPackage.deployPath }"
+              :aria-expanded="isPackageHistoryOpen"
+              @click="togglePackageHistoryOpen"
+            >
+              <span class="deploy-history-copy">
+                <strong>{{ getPackageTitle(displayedHistoryPackage) }}</strong>
+                <small :title="displayedHistoryPackage.deployPath">
+                  {{ getPackageSubtitle(displayedHistoryPackage) }}
+                </small>
+              </span>
+              <span class="deploy-history-side">
+                <small>{{ formatRecordTime(displayedHistoryPackage.createdAt) }}</small>
+                <b>{{ isPackageHistoryOpen ? '收起' : recentPackages.length > 1 ? '更多' : '选择' }}</b>
+              </span>
+            </button>
+
+            <transition name="deploy-collapse">
+              <div v-if="isPackageHistoryOpen" class="deploy-history-list">
+                <button
+                  v-for="item in recentPackages"
+                  :key="item.id"
+                  type="button"
+                  class="deploy-history-item"
+                  :class="{ active: deployForm.localPackagePath === item.deployPath }"
+                  @click="applyHistoryPackage(item)"
+                >
+                  <span class="deploy-history-copy">
+                    <strong>{{ getPackageTitle(item) }}</strong>
+                    <small :title="item.deployPath">{{ getPackageSubtitle(item) }}</small>
+                  </span>
+                  <span class="deploy-history-side">
+                    <small>{{ formatRecordTime(item.createdAt) }}</small>
+                    <b>{{ deployForm.localPackagePath === item.deployPath ? '已选' : '选择' }}</b>
+                  </span>
+                </button>
+              </div>
+            </transition>
           </section>
 
           <section class="deploy-section">
