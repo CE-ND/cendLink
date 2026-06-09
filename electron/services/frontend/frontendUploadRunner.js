@@ -194,16 +194,23 @@ function buildPrecheckCommand(config) {
 }
 
 function buildPublishLogCommand(config) {
-  return [
+  const commands = [
     `extract ${config.remoteArchivePath || '<archive>'}`,
     `publish ${config.remoteTargetDir}`,
     `strategy ${config.extractStrategy}`,
-  ].join(' && ')
+  ]
+
+  if (config.extractStrategy === 'clean') {
+    commands.push(`chmod -R 755 ${config.remoteTargetDir}`)
+  }
+
+  return commands.join(' && ')
 }
 
 function buildPublishCommand(config) {
   const extractCommand = buildExtractCommand(config)
   const replaceCommand = buildReplaceCommand(config)
+  const permissionCommand = buildPermissionCommand(config)
   const cleanupArchiveCommand = config.keepRemoteArchive ? '' : `rm -f "$ARCHIVE_PATH"`
 
   return `
@@ -240,12 +247,17 @@ fi
 cp -a "$SOURCE_DIR"/. "$PUBLISH_DIR"/
 test -f "$PUBLISH_DIR/$ENTRY_FILE"
 ${replaceCommand}
+${permissionCommand}
 ${cleanupArchiveCommand}
 FILE_COUNT=$(find "$TARGET_DIR" -mindepth 1 -maxdepth 2 | wc -l | tr -d ' ')
 echo "${FRONTEND_SOURCE_MARKER}$SOURCE_DIR"
 echo "${FRONTEND_BACKUP_MARKER}$BACKUP_DIR"
 echo "${FRONTEND_FILE_COUNT_MARKER}$FILE_COUNT"
 `.trim()
+}
+
+function buildPermissionCommand(config) {
+  return config.extractStrategy === 'clean' ? 'chmod -R 755 "$TARGET_DIR"' : ''
 }
 
 function buildExtractCommand(config) {
