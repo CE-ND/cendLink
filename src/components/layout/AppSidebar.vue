@@ -58,6 +58,10 @@ function navigate(routeName) {
   router.push({ name: routeName })
 }
 
+function isNavigationActive(item) {
+  return route.name === item.routeName || route.meta.navRoute === item.routeName
+}
+
 /**
  * 打开服务器页并进入新建服务器模式。
  */
@@ -82,7 +86,7 @@ function createServer() {
         v-for="item in navigationItems"
         :key="item.routeName"
         class="nav-item"
-        :class="{ active: route.name === item.routeName }"
+        :class="{ active: isNavigationActive(item) }"
         type="button"
         @click="navigate(item.routeName)"
       >

@@ -1,6 +1,7 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import CommandsView from '../features/commands/views/CommandsView.vue'
 import ContainerLogsView from '../features/containers/views/ContainerLogsView.vue'
+import NginxConfigView from '../features/containers/views/NginxConfigView.vue'
 import ServersView from '../features/connections/views/ServersView.vue'
 import DeploymentView from '../features/deploy/views/DeploymentView.vue'
 import ImagePackageView from '../features/docker/views/ImagePackageView.vue'
@@ -60,6 +61,16 @@ const routes = [
         meta: {
           eyebrow: 'Docker Logs',
           title: '容器日志',
+        },
+      },
+      {
+        path: 'containers/nginx/:containerId',
+        name: 'nginx-config',
+        component: NginxConfigView,
+        meta: {
+          eyebrow: 'Nginx Config',
+          title: 'Nginx 配置',
+          navRoute: 'containers',
         },
       },
       {

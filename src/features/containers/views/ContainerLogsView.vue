@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 
@@ -33,7 +34,9 @@ const isLoadingLogs = ref(false)
 const isFollowing = ref(false)
 const isAutoScrollPaused = ref(false)
 const followSessionId = ref('')
+const openActionMenuId = ref('')
 const logBodyRef = ref(null)
+const router = useRouter()
 
 let unsubscribeStream = null
 
@@ -135,6 +138,10 @@ async function refreshContainers() {
       selectedContainerId.value = ''
       logOutput.value = ''
     }
+
+    if (openActionMenuId.value && !containers.value.some((item) => item.id === openActionMenuId.value)) {
+      openActionMenuId.value = ''
+    }
   } catch (error) {
     listError.value = error?.message || String(error)
   } finally {
@@ -143,9 +150,38 @@ async function refreshContainers() {
 }
 
 async function selectContainer(container) {
+  openActionMenuId.value = ''
   selectedContainerId.value = container.id
   isAutoScrollPaused.value = false
   await loadContainerLogs(container)
+}
+
+function toggleContainerActionMenu(containerId) {
+  openActionMenuId.value = openActionMenuId.value === containerId ? '' : containerId
+}
+
+async function openNginxConfig(container) {
+  if (!isNginxContainer(container)) {
+    return
+  }
+
+  await stopFollowing({ silent: true })
+  openActionMenuId.value = ''
+  selectedContainerId.value = container.id
+  isAutoScrollPaused.value = false
+
+  router.push({
+    name: 'nginx-config',
+    params: {
+      containerId: container.id,
+    },
+    query: {
+      name: container.name,
+      image: container.image,
+      status: container.status,
+      ports: container.ports,
+    },
+  })
 }
 
 async function loadContainerLogs(container = selectedContainer.value) {
@@ -463,6 +499,16 @@ function isRunning(status) {
   return String(status || '').startsWith('Up')
 }
 
+function isNginxContainer(container) {
+  const identity = [container?.image, container?.name]
+    .map((value) => String(value || '').toLowerCase())
+    .join(' ')
+
+  return /(^|[/:@._-])(nginx|openresty)([/:@._-]|$)/i.test(identity) ||
+    identity.includes('nginxinc') ||
+    identity.includes('nginx-proxy')
+}
+
 function normalizeTimeoutSeconds(value) {
   const seconds = Number(value || 60)
 
@@ -525,25 +571,59 @@ function formatStreamError(error) {
       <p v-else-if="!filteredContainers.length" class="container-state">暂无匹配容器</p>
 
       <div class="container-list">
-        <button
+        <div
           v-for="container in filteredContainers"
           :key="container.id"
           class="container-row"
-          :class="{ active: selectedContainerId === container.id }"
-          type="button"
-          @click="selectContainer(container)"
+          :class="{ active: selectedContainerId === container.id, nginx: isNginxContainer(container) }"
         >
-          <span class="container-row-main">
-            <strong :title="container.name">{{ container.name }}</strong>
-            <span class="container-uptime">{{ container.status }}</span>
+          <button
+            class="container-row-select"
+            type="button"
+            @click="selectContainer(container)"
+          >
+            <span class="container-row-main">
+              <strong :title="container.name">{{ container.name }}</strong>
+              <span v-if="isNginxContainer(container)" class="container-kind-badge">Nginx</span>
+              <span class="container-uptime">{{ container.status }}</span>
+            </span>
+            <span class="container-row-image" :title="container.image">{{ container.image }}</span>
+            <small>{{ container.ports || '未暴露端口' }}</small>
+            <span class="container-row-state">
+              <span class="container-status-dot" :class="statusClass(container.status)"></span>
+              <span>{{ statusLabel(container.status) }}</span>
+            </span>
+          </button>
+
+          <span class="container-row-actions">
+            <button
+              v-if="isNginxContainer(container)"
+              class="container-action-trigger"
+              type="button"
+              :class="{ open: openActionMenuId === container.id }"
+              :aria-expanded="openActionMenuId === container.id"
+              aria-label="容器操作"
+              title="容器操作"
+              @click.stop="toggleContainerActionMenu(container.id)"
+            >
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+              <span aria-hidden="true"></span>
+            </button>
+
+            <Transition name="container-action-menu-transition">
+              <span
+                v-if="openActionMenuId === container.id"
+                class="container-action-menu"
+                @click.stop
+              >
+                <button type="button" @click="openNginxConfig(container)">
+                  更改配置
+                </button>
+              </span>
+            </Transition>
           </span>
-          <span class="container-row-image" :title="container.image">{{ container.image }}</span>
-          <small>{{ container.ports || '未暴露端口' }}</small>
-          <span class="container-row-state">
-            <span class="container-status-dot" :class="statusClass(container.status)"></span>
-            <span>{{ statusLabel(container.status) }}</span>
-          </span>
-        </button>
+        </div>
       </div>
     </section>
 

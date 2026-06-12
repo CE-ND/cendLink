@@ -29,7 +29,9 @@ const {
 // 当前页面头部的小标题和标题，来自路由 meta。
 const pageEyebrow = computed(() => route.meta.eyebrow || 'Workspace')
 const pageTitle = computed(() => route.meta.title || '远程工作区')
-const isTerminalHiddenRoute = computed(() => ['package', 'deploy', 'frontend', 'settings', 'containers'].includes(route.name))
+const isTerminalHiddenRoute = computed(() => (
+  ['package', 'deploy', 'frontend', 'settings', 'containers', 'nginx-config'].includes(route.name)
+))
 // 判断 preload 桥是否可用，用于提示当前是 Electron 模式还是浏览器预览。
 const bridgeStatusText = computed(() => {
   return hasElectronBridge.value ? 'Electron 已连接' : '浏览器预览'
