@@ -1,4 +1,5 @@
 <script setup>
+import { ChevronDown } from '@lucide/vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps({
@@ -258,6 +259,7 @@ function removeGlobalListeners() {
       @keydown="handleKeydown"
     >
       <span class="app-select-value">{{ selectedLabel }}</span>
+      <ChevronDown class="app-select-arrow" :size="16" aria-hidden="true" />
     </button>
 
     <Teleport to="body">

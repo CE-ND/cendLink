@@ -21,7 +21,7 @@ const {
 </script>
 
 <template>
-  <div class="content-grid">
+  <div class="connection-board">
     <ConnectionForm
       :model-value="form"
       :busy="isTesting || isExecutingCommand"
@@ -34,6 +34,11 @@ const {
       @test="testConnection"
     />
 
-    <ConnectionStatus :result="result" :busy="isTesting" :stale="needsRetest" />
+    <ConnectionStatus
+      :result="result"
+      :target="{ username: form.username, host: form.host, port: form.port }"
+      :busy="isTesting"
+      :stale="needsRetest"
+    />
   </div>
 </template>

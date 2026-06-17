@@ -41,7 +41,7 @@ function updateField(field, value) {
 </script>
 
 <template>
-  <form class="panel connection-form" @submit.prevent="emit('test')">
+  <form class="connection-form" @submit.prevent="emit('test')">
     <div class="panel-header">
       <div>
         <p class="eyebrow">Server Profile</p>
