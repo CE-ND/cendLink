@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { parseNginxConfig } from '../utils/nginxConfigParser.js'
+import { serializeConfig, diffConfigs } from '../utils/nginxConfigEditor.js'
 
 const MAX_PATH_TYPE_CHECKS = 32
 const MAX_CONFIG_FILES = 16
@@ -70,6 +71,14 @@ const detailServiceId = ref('')
 const isLoading = ref(false)
 const loadError = ref('')
 const configLoadError = ref('')
+
+const isEditing = ref(false)
+const editingContent = ref('')
+const isSaving = ref(false)
+const isValidating = ref(false)
+const saveResult = ref(null)
+const showDiffPreview = ref(false)
+const diffResult = ref(null)
 
 const routeContainerId = computed(() => String(route.params.containerId || '').trim())
 
@@ -1335,6 +1344,221 @@ function handleDetailKeydown(event) {
 function backToContainers() {
   router.push({ name: 'containers' })
 }
+
+function startEditing() {
+  const file = selectedConfigFile.value
+
+  if (!file || !file.content) {
+    return
+  }
+
+  editingContent.value = file.content
+  isEditing.value = true
+  saveResult.value = null
+  showDiffPreview.value = false
+  diffResult.value = null
+}
+
+function cancelEditing() {
+  isEditing.value = false
+  editingContent.value = ''
+  saveResult.value = null
+  showDiffPreview.value = false
+  diffResult.value = null
+}
+
+function handleTabKey(event) {
+  if (event.key === 'Tab') {
+    event.preventDefault()
+    const textarea = event.target
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    const value = textarea.value
+
+    editingContent.value = value.substring(0, start) + '    ' + value.substring(end)
+
+    nextTick(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + 4
+    })
+  }
+}
+
+function showPreviewDiff() {
+  const file = selectedConfigFile.value
+
+  if (!file) {
+    return
+  }
+
+  diffResult.value = diffConfigs(file.content || '', editingContent.value)
+  showDiffPreview.value = true
+}
+
+function closeDiffPreview() {
+  showDiffPreview.value = false
+  diffResult.value = null
+}
+
+async function validateConfig() {
+  if (!selectedConfigFile.value) {
+    return
+  }
+
+  isValidating.value = true
+  saveResult.value = null
+
+  try {
+    const response = await executeRemoteCommand(
+      `nginx -t -c ${shellQuote(selectedConfigFile.value.containerPath)} 2>&1`,
+    )
+
+    const output = [response.stdout, response.stderr].filter(Boolean).join('\n').trim()
+
+    if (response.ok) {
+      saveResult.value = {
+        type: 'success',
+        title: '语法校验通过',
+        message: output || 'nginx -t 校验成功，配置语法正确',
+      }
+    } else {
+      saveResult.value = {
+        type: 'error',
+        title: '语法校验失败',
+        message: output || 'nginx -t 校验失败',
+      }
+    }
+  } catch (error) {
+    saveResult.value = {
+      type: 'error',
+      title: '校验出错',
+      message: error?.message || String(error),
+    }
+  } finally {
+    isValidating.value = false
+  }
+}
+
+async function saveConfig() {
+  const file = selectedConfigFile.value
+
+  if (!file) {
+    return
+  }
+
+  if (file.source === 'container') {
+    saveResult.value = {
+      type: 'error',
+      title: '无法保存',
+      message: '当前配置文件来自容器内部（非挂载），无法通过宿主机写入。请确认挂载路径后重试。',
+    }
+    return
+  }
+
+  if (file.readMode !== 'host') {
+    saveResult.value = {
+      type: 'error',
+      title: '无法保存',
+      message: '当前配置文件无法从宿主机写入，请检查挂载配置。',
+    }
+    return
+  }
+
+  isSaving.value = true
+  saveResult.value = null
+
+  try {
+    const backupPath = `${file.hostPath}.bak.${Date.now()}`
+    const backupResult = await executeRemoteCommand(`cp ${shellQuote(file.hostPath)} ${shellQuote(backupPath)}`)
+
+    if (!backupResult.ok) {
+      throw new Error(`备份失败: ${backupResult.message || mergeCommandOutput(backupResult)}`)
+    }
+
+    const writeCommand = `cat > ${shellQuote(file.hostPath)} <<'CENDLINK_NGINX_EOF'\n${editingContent.value}\nCENDLINK_NGINX_EOF`
+    const writeResult = await executeRemoteCommand(writeCommand)
+
+    if (!writeResult.ok) {
+      throw new Error(`写入失败: ${writeResult.message || mergeCommandOutput(writeResult)}`)
+    }
+
+    const validateResult = await executeRemoteCommand(`nginx -t 2>&1`)
+    const validateOutput = [validateResult.stdout, validateResult.stderr].filter(Boolean).join('\n').trim()
+
+    if (!validateResult.ok) {
+      await executeRemoteCommand(`cp ${shellQuote(backupPath)} ${shellQuote(file.hostPath)}`)
+      throw new Error(`配置语法校验失败，已回滚备份:\n${validateOutput}`)
+    }
+
+    const reloadResult = await executeRemoteCommand(`nginx -s reload 2>&1`)
+
+    if (!reloadResult.ok) {
+      saveResult.value = {
+        type: 'warning',
+        title: '配置已保存，重载失败',
+        message: `配置已写入并通过语法校验，但 nginx -s reload 失败:\n${[reloadResult.stdout, reloadResult.stderr].filter(Boolean).join('\n').trim()}`,
+      }
+    } else {
+      saveResult.value = {
+        type: 'success',
+        title: '保存成功',
+        message: `配置已写入、语法校验通过、Nginx 已重载。\n备份路径: ${backupPath}`,
+      }
+    }
+
+    file.content = editingContent.value
+    file.analysis = parseNginxConfig(editingContent.value, {
+      name: file.name,
+      path: file.containerPath || file.hostPath,
+    })
+
+    isEditing.value = false
+    editingContent.value = ''
+  } catch (error) {
+    saveResult.value = {
+      type: 'error',
+      title: '保存失败',
+      message: error?.message || String(error),
+    }
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function reloadNginx() {
+  isSaving.value = true
+  saveResult.value = null
+
+  try {
+    const response = await executeRemoteCommand(`nginx -s reload 2>&1`)
+    const output = [response.stdout, response.stderr].filter(Boolean).join('\n').trim()
+
+    if (response.ok) {
+      saveResult.value = {
+        type: 'success',
+        title: '重载成功',
+        message: output || 'Nginx 已重新加载',
+      }
+    } else {
+      saveResult.value = {
+        type: 'error',
+        title: '重载失败',
+        message: output || 'nginx -s reload 执行失败',
+      }
+    }
+  } catch (error) {
+    saveResult.value = {
+      type: 'error',
+      title: '重载出错',
+      message: error?.message || String(error),
+    }
+  } finally {
+    isSaving.value = false
+  }
+}
+
+function dismissSaveResult() {
+  saveResult.value = null
+}
 </script>
 
 <template>
@@ -1385,6 +1609,14 @@ function backToContainers() {
               {{ selectedConfigFile.containerPath }}
             </span>
             <button
+              v-if="selectedConfigFile && selectedConfigFile.writable && !isEditing"
+              class="primary-button"
+              type="button"
+              @click="startEditing"
+            >
+              编辑配置
+            </button>
+            <button
               class="secondary-button"
               type="button"
               :disabled="isLoading"
@@ -1399,6 +1631,150 @@ function backToContainers() {
         <p v-else-if="isLoading" class="container-state">正在读取 docker inspect、分析挂载路径并加载 Nginx 配置...</p>
         <p v-else-if="connectionHint" class="container-state">{{ connectionHint }}</p>
         <p v-else-if="configLoadError" class="container-state failed">{{ configLoadError }}</p>
+
+        <div
+          v-if="isEditing"
+          class="nginx-editor-overlay"
+          role="presentation"
+          @click.self="cancelEditing"
+        >
+          <aside
+            class="nginx-editor-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label="编辑 Nginx 配置"
+          >
+            <header class="nginx-editor-head">
+              <div class="nginx-editor-head-left">
+                <p class="eyebrow">Config Editor</p>
+                <h3>编辑配置文件</h3>
+                <small>{{ selectedConfigFile?.containerPath }}</small>
+              </div>
+              <div class="nginx-editor-head-actions">
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="isValidating"
+                  @click="validateConfig"
+                >
+                  {{ isValidating ? '校验中...' : '校验语法' }}
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  @click="showPreviewDiff"
+                >
+                  查看差异
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  :disabled="isSaving"
+                  @click="reloadNginx"
+                >
+                  {{ isSaving ? '重载中...' : '重载 Nginx' }}
+                </button>
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="isSaving"
+                  @click="saveConfig"
+                >
+                  {{ isSaving ? '保存中...' : '保存并重载' }}
+                </button>
+                <button
+                  class="nginx-editor-close"
+                  type="button"
+                  aria-label="取消编辑"
+                  title="取消编辑"
+                  @click="cancelEditing"
+                >
+                  ×
+                </button>
+              </div>
+            </header>
+
+            <div class="nginx-editor-body">
+              <textarea
+                ref="editorTextareaRef"
+                class="nginx-editor-textarea"
+                v-model="editingContent"
+                spellcheck="false"
+                @keydown="handleTabKey"
+              ></textarea>
+            </div>
+
+            <div
+              v-if="saveResult"
+              class="nginx-editor-toast"
+              :class="saveResult.type"
+              role="alert"
+            >
+              <div class="nginx-editor-toast-content">
+                <strong>{{ saveResult.title }}</strong>
+                <pre>{{ saveResult.message }}</pre>
+              </div>
+              <button
+                class="nginx-editor-toast-close"
+                type="button"
+                aria-label="关闭"
+                @click="dismissSaveResult"
+              >
+                ×
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        <div
+          v-if="showDiffPreview"
+          class="nginx-diff-overlay"
+          role="presentation"
+          @click.self="closeDiffPreview"
+        >
+          <aside
+            class="nginx-diff-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="配置差异预览"
+          >
+            <header class="nginx-diff-head">
+              <div>
+                <p class="eyebrow">Diff Preview</p>
+                <h3>配置差异</h3>
+                <small v-if="diffResult">
+                  {{ diffResult.same ? '无差异' : `${diffResult.changes.length} 处变更` }}
+                  · 原文件 {{ diffResult.oldLineCount }} 行 → 新文件 {{ diffResult.newLineCount }} 行
+                </small>
+              </div>
+              <button
+                class="nginx-detail-close"
+                type="button"
+                aria-label="关闭差异预览"
+                @click="closeDiffPreview"
+              >
+                ×
+              </button>
+            </header>
+
+            <div class="nginx-diff-body">
+              <p v-if="diffResult?.same" class="nginx-diff-empty">当前编辑内容与原文件完全一致，没有差异。</p>
+              <div v-else-if="diffResult?.changes?.length" class="nginx-diff-list">
+                <div
+                  v-for="(change, index) in diffResult.changes"
+                  :key="index"
+                  class="nginx-diff-hunk"
+                >
+                  <header class="nginx-diff-hunk-head">
+                    <span>第 {{ change.oldStart }} 行起</span>
+                    <span>-{{ change.oldLines.length }} / +{{ change.newLines.length }}</span>
+                  </header>
+                  <pre class="nginx-diff-code"><template v-for="(line, li) in change.oldLines" :key="'r'+li"><span class="diff-remove">- {{ line }}</span></template><template v-for="(line, li) in change.newLines" :key="'a'+li"><span class="diff-add">+ {{ line }}</span></template></pre>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
 
         <section v-if="!isLoading && !loadError && selectedConfigAnalysis" class="nginx-service-dashboard">
           <header class="nginx-dashboard-head">
