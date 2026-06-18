@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { parseNginxConfig } from '../utils/nginxConfigParser.js'
-import { serializeConfig, diffConfigs } from '../utils/nginxConfigEditor.js'
+import { diffConfigs } from '../utils/nginxConfigEditor.js'
 
 const MAX_PATH_TYPE_CHECKS = 32
 const MAX_CONFIG_FILES = 16
@@ -79,6 +79,8 @@ const isValidating = ref(false)
 const saveResult = ref(null)
 const showDiffPreview = ref(false)
 const diffResult = ref(null)
+const editorTextareaRef = ref(null)
+const editorLineNumberRef = ref(null)
 
 const routeContainerId = computed(() => String(route.params.containerId || '').trim())
 
@@ -167,6 +169,10 @@ const selectedRouteOverview = computed(() => {
 })
 const detailService = computed(() => {
   return serviceCards.value.find((service) => service.id === detailServiceId.value) || null
+})
+const editingLineNumbers = computed(() => {
+  const lineCount = String(editingContent.value || '').split(/\r\n|\r|\n/).length
+  return Array.from({ length: Math.max(1, lineCount) }, (_, index) => index + 1)
 })
 
 const mountOverview = computed(() => {
@@ -1383,6 +1389,12 @@ function handleTabKey(event) {
   }
 }
 
+function syncEditorLineNumbers(event) {
+  if (editorLineNumberRef.value) {
+    editorLineNumberRef.value.scrollTop = event.target.scrollTop
+  }
+}
+
 function showPreviewDiff() {
   const file = selectedConfigFile.value
 
@@ -1397,6 +1409,22 @@ function showPreviewDiff() {
 function closeDiffPreview() {
   showDiffPreview.value = false
   diffResult.value = null
+}
+
+function diffRowLabel(type) {
+  if (type === 'add') {
+    return '新增'
+  }
+
+  if (type === 'remove') {
+    return '删除'
+  }
+
+  if (type === 'change') {
+    return '修改'
+  }
+
+  return '未变'
 }
 
 async function validateConfig() {
@@ -1695,13 +1723,19 @@ function dismissSaveResult() {
             </header>
 
             <div class="nginx-editor-body">
-              <textarea
-                ref="editorTextareaRef"
-                class="nginx-editor-textarea"
-                v-model="editingContent"
-                spellcheck="false"
-                @keydown="handleTabKey"
-              ></textarea>
+              <div class="nginx-editor-code-frame">
+                <div ref="editorLineNumberRef" class="nginx-editor-line-numbers" aria-hidden="true">
+                  <span v-for="lineNumber in editingLineNumbers" :key="lineNumber">{{ lineNumber }}</span>
+                </div>
+                <textarea
+                  ref="editorTextareaRef"
+                  class="nginx-editor-textarea"
+                  v-model="editingContent"
+                  spellcheck="false"
+                  @keydown="handleTabKey"
+                  @scroll="syncEditorLineNumbers"
+                ></textarea>
+              </div>
             </div>
 
             <div
@@ -1743,7 +1777,12 @@ function dismissSaveResult() {
                 <p class="eyebrow">Diff Preview</p>
                 <h3>配置差异</h3>
                 <small v-if="diffResult">
-                  {{ diffResult.same ? '无差异' : `${diffResult.changes.length} 处变更` }}
+                  <template v-if="diffResult.same">无差异</template>
+                  <template v-else>
+                    <span class="nginx-diff-stat change">{{ diffResult.modifiedCount }} 修改</span>
+                    <span class="nginx-diff-stat add">+{{ diffResult.addedCount }}</span>
+                    <span class="nginx-diff-stat remove">-{{ diffResult.removedCount }}</span>
+                  </template>
                   · 原文件 {{ diffResult.oldLineCount }} 行 → 新文件 {{ diffResult.newLineCount }} 行
                 </small>
               </div>
@@ -1759,17 +1798,48 @@ function dismissSaveResult() {
 
             <div class="nginx-diff-body">
               <p v-if="diffResult?.same" class="nginx-diff-empty">当前编辑内容与原文件完全一致，没有差异。</p>
-              <div v-else-if="diffResult?.changes?.length" class="nginx-diff-list">
-                <div
-                  v-for="(change, index) in diffResult.changes"
-                  :key="index"
-                  class="nginx-diff-hunk"
-                >
-                  <header class="nginx-diff-hunk-head">
-                    <span>第 {{ change.oldStart }} 行起</span>
-                    <span>-{{ change.oldLines.length }} / +{{ change.newLines.length }}</span>
-                  </header>
-                  <pre class="nginx-diff-code"><template v-for="(line, li) in change.oldLines" :key="'r'+li"><span class="diff-remove">- {{ line }}</span></template><template v-for="(line, li) in change.newLines" :key="'a'+li"><span class="diff-add">+ {{ line }}</span></template></pre>
+              <div v-else-if="diffResult?.previewRows?.length" class="nginx-diff-preview">
+                <header class="nginx-diff-preview-head">
+                  <strong>完整配置预览</strong>
+                  <span>以新配置为主体，修改行会显示原内容标注</span>
+                </header>
+
+                <div class="nginx-diff-preview-code" aria-label="完整配置差异预览">
+                  <div
+                    v-for="(line, li) in diffResult.previewRows"
+                    :key="li"
+                    class="nginx-diff-preview-row"
+                    :class="line.type"
+                  >
+                    <div v-if="line.type === 'change'" class="nginx-diff-original-note">
+                      <span class="nginx-diff-preview-gutter">{{ line.oldNumber }}</span>
+                      <span class="nginx-diff-preview-type">原</span>
+                      <code>
+                        <span
+                          v-for="(part, partIndex) in line.oldParts"
+                          :key="partIndex"
+                          :class="{ changed: part.changed }"
+                        >{{ part.text }}</span>
+                      </code>
+                    </div>
+
+                    <div class="nginx-diff-preview-line">
+                      <span class="nginx-diff-preview-gutter">
+                        {{ line.newNumber ?? line.oldNumber ?? '' }}
+                      </span>
+                      <span v-if="line.type !== 'equal'" class="nginx-diff-preview-type">
+                        {{ diffRowLabel(line.type) }}
+                      </span>
+                      <span v-else class="nginx-diff-preview-type muted"></span>
+                      <code>
+                        <span
+                          v-for="(part, partIndex) in line.parts"
+                          :key="partIndex"
+                          :class="{ changed: part.changed }"
+                        >{{ part.text }}</span>
+                      </code>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

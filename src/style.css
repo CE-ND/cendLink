@@ -2873,6 +2873,34 @@ h3 {
   overflow: hidden;
 }
 
+.nginx-editor-code-frame {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  min-height: 0;
+  background: var(--surface-subtle);
+}
+
+.nginx-editor-line-numbers {
+  overflow: hidden;
+  padding: 16px 0;
+  border-right: 1px solid oklch(88% 0.008 230);
+  background: oklch(96% 0.005 230);
+  color: oklch(62% 0.01 245 / 68%);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-ligatures: none;
+  line-height: 1.65;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.nginx-editor-line-numbers span {
+  display: block;
+  height: 1.65em;
+  padding: 0 10px 0 4px;
+}
+
 .nginx-editor-textarea {
   width: 100%;
   height: 100%;
@@ -2888,6 +2916,8 @@ h3 {
   line-height: 1.65;
   resize: none;
   tab-size: 4;
+  white-space: pre;
+  overflow: auto;
 }
 
 .nginx-editor-textarea:focus {
@@ -2977,10 +3007,10 @@ h3 {
 .nginx-diff-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(760px, 90vw);
-  max-height: 80vh;
+  width: min(1120px, 94vw);
+  max-height: 84vh;
   border: 1px solid oklch(84% 0.012 230);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
   overflow: hidden;
@@ -3023,7 +3053,8 @@ h3 {
 }
 
 .nginx-diff-body {
-  padding: 14px 18px;
+  padding: 16px 18px;
+  background: oklch(97% 0.004 230);
   overflow-y: auto;
 }
 
@@ -3036,56 +3067,172 @@ h3 {
   font-weight: 700;
 }
 
-.nginx-diff-list {
-  display: grid;
-  gap: 16px;
-}
-
-.nginx-diff-hunk {
-  display: grid;
-  gap: 0;
-  border: 1px solid oklch(84% 0.012 230);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.nginx-diff-hunk-head {
+.nginx-diff-preview-head {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  background: oklch(97% 0.005 230);
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid oklch(84% 0.012 230);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: oklch(96% 0.006 230);
 }
 
-.nginx-diff-code {
-  display: grid;
-  gap: 0;
-  margin: 0;
-  padding: 8px 0;
+.nginx-diff-preview-head strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.nginx-diff-preview-head span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.nginx-diff-preview-code {
+  border: 1px solid oklch(84% 0.012 230);
+  border-radius: 0 0 8px 8px;
   overflow-x: auto;
-  background: var(--terminal);
+  background: var(--surface-subtle);
   font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.7;
+  line-height: 1.65;
+}
+
+.nginx-diff-preview-row {
+  min-width: max-content;
+}
+
+.nginx-diff-preview-line,
+.nginx-diff-original-note {
+  display: grid;
+  grid-template-columns: 58px 58px minmax(0, 1fr);
+  min-width: max-content;
+}
+
+.nginx-diff-preview-line {
+  border-bottom: 0;
+}
+
+.nginx-diff-preview-row:last-child .nginx-diff-preview-line {
+  border-bottom: 0;
+}
+
+.nginx-diff-preview-gutter {
+  padding: 2px 10px;
+  color: oklch(62% 0.01 245 / 64%);
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+  background: oklch(96% 0.005 230);
+  border-right: 1px solid oklch(89% 0.008 230);
+}
+
+.nginx-diff-preview-type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  color: var(--text-muted);
+  background: oklch(97% 0.004 230);
+  border-right: 1px solid oklch(90% 0.008 230);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.nginx-diff-preview-type.muted {
+  color: transparent;
+}
+
+.nginx-diff-preview-line code {
+  min-width: max-content;
+  padding: 2px 12px;
+  color: var(--text);
   white-space: pre;
 }
 
-.nginx-diff-code .diff-remove {
-  display: block;
-  padding: 0 12px;
-  background: oklch(58% 0.16 25 / 8%);
-  color: oklch(62% 0.18 25);
+.nginx-diff-preview-row.change .nginx-diff-preview-line {
+  background: oklch(70% 0.12 75 / 8%);
 }
 
-.nginx-diff-code .diff-add {
-  display: block;
-  padding: 0 12px;
+.nginx-diff-preview-row.add .nginx-diff-preview-line {
   background: oklch(55% 0.13 150 / 8%);
-  color: oklch(55% 0.15 150);
+}
+
+.nginx-diff-preview-row.remove .nginx-diff-preview-line {
+  background: oklch(58% 0.16 25 / 8%);
+}
+
+.nginx-diff-preview-row.change .nginx-diff-preview-type {
+  color: oklch(48% 0.13 75);
+  background: oklch(70% 0.12 75 / 16%);
+}
+
+.nginx-diff-preview-row.add .nginx-diff-preview-type {
+  color: oklch(42% 0.12 150);
+  background: oklch(55% 0.13 150 / 14%);
+}
+
+.nginx-diff-preview-row.remove .nginx-diff-preview-type {
+  color: oklch(48% 0.16 25);
+  background: oklch(58% 0.16 25 / 14%);
+}
+
+.nginx-diff-original-note {
+  align-items: start;
+  border-bottom: 1px dashed oklch(80% 0.07 25);
+  background: oklch(58% 0.16 25 / 7%);
+  color: oklch(48% 0.16 25);
+}
+
+.nginx-diff-original-note span {
+  padding: 2px 10px;
+}
+
+.nginx-diff-original-note code {
+  min-width: max-content;
+  padding: 2px 12px;
+  white-space: pre;
+}
+
+.nginx-diff-preview-code .changed {
+  border-radius: 3px;
+}
+
+.nginx-diff-original-note .changed {
+  background: oklch(58% 0.16 25 / 18%);
+}
+
+.nginx-diff-preview-row.change .nginx-diff-preview-line .changed {
+  background: oklch(70% 0.12 75 / 22%);
+}
+
+.nginx-diff-preview-row.add .nginx-diff-preview-line .changed {
+  background: oklch(55% 0.13 150 / 20%);
+}
+
+.nginx-diff-preview-row.remove .nginx-diff-preview-line .changed {
+  background: oklch(58% 0.16 25 / 18%);
+}
+
+.nginx-diff-stat {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.nginx-diff-stat.change {
+  color: oklch(55% 0.13 75);
+}
+
+.nginx-diff-stat.add {
+  color: oklch(52% 0.15 150);
+}
+
+.nginx-diff-stat.remove {
+  margin-left: 4px;
+  color: oklch(58% 0.18 25);
 }
 
 .settings-view {
