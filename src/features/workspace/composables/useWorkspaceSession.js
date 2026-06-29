@@ -7,6 +7,7 @@ import {
   getDockerfileTemplateDefaults,
   parseDockerfileText,
 } from '../../../shared/dockerfileTemplates.js'
+import { buildServerMetricsCommand, parseServerMetrics } from '../../connections/utils/serverMetrics.js'
 
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60
 const MIN_COMMAND_TIMEOUT_SECONDS = 5
@@ -47,6 +48,12 @@ const form = reactive(createDefaultServerForm())
 const result = ref(null)
 // 最近一次远程命令执行结果。
 const commandResult = ref(null)
+// 已连接服务器的资源占用（CPU/内存/磁盘），手动刷新。
+const serverMetrics = ref(null)
+// 资源数据读取中状态。
+const isLoadingMetrics = ref(false)
+// 资源数据读取错误信息。
+const metricsError = ref('')
 // 命令输入框内容。
 const commandText = ref('')
 const defaultDockerfileTemplate = getDockerfileTemplateDefaults(DEFAULT_DOCKERFILE_TEMPLATE_ID)
@@ -469,6 +476,8 @@ function updateForm(nextValue) {
 
   if (previousSnapshot !== currentConnectionSnapshot.value) {
     commandResult.value = null
+    serverMetrics.value = null
+    metricsError.value = ''
   }
 }
 
@@ -1434,6 +1443,8 @@ function createNewServer() {
   updateForm(createDefaultServerForm())
   result.value = null
   commandResult.value = null
+  serverMetrics.value = null
+  metricsError.value = ''
   lastTestedSnapshot.value = ''
   logs.value.push(logLine('已进入新建服务器模式'))
 }
@@ -1500,6 +1511,8 @@ function selectSavedServer(serverId) {
 
   result.value = null
   commandResult.value = null
+  serverMetrics.value = null
+  metricsError.value = ''
   lastTestedSnapshot.value = ''
   logs.value.push(logLine(`已载入服务器配置: ${server.name}`))
 }
@@ -1579,6 +1592,8 @@ async function testConnection() {
 
   result.value = null
   commandResult.value = null
+  serverMetrics.value = null
+  metricsError.value = ''
   lastTestedSnapshot.value = ''
   isTesting.value = true
   logs.value = [logLine(`开始测试 ${form.username}@${form.host || '未填写 Host'}:${form.port}`)]
@@ -1603,6 +1618,10 @@ async function testConnection() {
     lastTestedSnapshot.value = currentConnectionSnapshot.value
     logs.value = response.logs?.length ? response.logs : [logLine(response.message)]
     await persistActiveServerStatus(response)
+
+    if (response.ok) {
+      void refreshServerMetrics()
+    }
   } catch (error) {
     result.value = {
       ok: false,
@@ -1615,6 +1634,42 @@ async function testConnection() {
     await persistActiveServerStatus(result.value)
   } finally {
     isTesting.value = false
+  }
+}
+
+/**
+ * 读取已连接服务器的资源占用（CPU/内存/磁盘）。
+ * 复用 ssh.executeCommand 跑一条组合探测命令，在渲染层解析。手动触发或连接成功后调用一次。
+ */
+async function refreshServerMetrics() {
+  const ssh = getSshBridge()
+
+  if (!ssh?.executeCommand || !result.value?.ok || needsRetest.value || isLoadingMetrics.value) {
+    return
+  }
+
+  isLoadingMetrics.value = true
+  metricsError.value = ''
+
+  try {
+    const response = await ssh.executeCommand(
+      {
+        ...form,
+        commandTimeoutMs: normalizeCommandTimeoutSeconds(workspaceSettings.commandTimeoutSeconds) * 1000,
+      },
+      buildServerMetricsCommand(),
+    )
+
+    // 探测命令里个别项失败可能导致非零退出码，但只要有 stdout 就尽量解析。
+    if (!response.stdout) {
+      throw new Error(response.message || response.stderr || '读取服务器资源失败')
+    }
+
+    serverMetrics.value = parseServerMetrics(response.stdout)
+  } catch (error) {
+    metricsError.value = error?.message || String(error)
+  } finally {
+    isLoadingMetrics.value = false
   }
 }
 
@@ -2591,6 +2646,9 @@ export function useWorkspaceSession() {
     isUploadingFrontend,
     result,
     commandResult,
+    serverMetrics,
+    isLoadingMetrics,
+    metricsError,
     commandText,
     savedServers,
     commandRuns,
@@ -2678,6 +2736,7 @@ export function useWorkspaceSession() {
     saveWorkspaceSettings,
     testConnection,
     executeCommand,
+    refreshServerMetrics,
     selectPrivateKeyFile,
     clearLogs,
   }

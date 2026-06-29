@@ -9,7 +9,6 @@ import { useWorkspaceSession } from '../features/workspace/composables/useWorksp
 const route = useRoute()
 const terminalRef = ref(null)
 const isWindowMaximized = ref(false)
-const appLogoUrl = `${import.meta.env.BASE_URL || './'}Cend.svg`
 let removeWindowStateListener = null
 
 // 从共享会话取出跨页面需要的状态和动作。
@@ -91,10 +90,7 @@ onBeforeUnmount(() => {
 <template>
   <main class="connection-page">
     <header class="app-titlebar">
-      <div class="app-titlebar-brand">
-        <img class="app-titlebar-logo" :src="appLogoUrl" alt="" aria-hidden="true" />
-        <span>CendLink</span>
-      </div>
+      <div class="app-titlebar-brand"></div>
       <div class="app-titlebar-spacer"></div>
       <div v-if="hasWindowControls" class="window-controls" aria-label="窗口控制">
         <button class="window-control" type="button" aria-label="最小化" @click="minimizeWindow">

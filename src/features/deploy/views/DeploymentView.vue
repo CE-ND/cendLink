@@ -1,8 +1,8 @@
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { gsap } from 'gsap'
-import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
-import AppSelect from '../../../components/ui/AppSelect.vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { gsap } from "gsap";
+import { useWorkspaceSession } from "../../workspace/composables/useWorkspaceSession.js";
+import AppSelect from "../../../components/ui/AppSelect.vue";
 
 // 远程部署页：选择镜像包、编辑部署参数、实时预览 docker run 并执行部署。
 const {
@@ -27,256 +27,306 @@ const {
   selectDeployPackageFile,
   refreshDeployPreview,
   runDeployment,
-} = useWorkspaceSession()
+} = useWorkspaceSession();
 
-const emit = defineEmits(['open-logs'])
+const emit = defineEmits(["open-logs"]);
 
 const restartPolicyOptions = [
-  { value: 'unless-stopped', label: 'unless-stopped' },
-  { value: 'always', label: 'always' },
-  { value: 'on-failure', label: 'on-failure' },
-  { value: 'no', label: 'no' },
-]
+  { value: "unless-stopped", label: "unless-stopped" },
+  { value: "always", label: "always" },
+  { value: "on-failure", label: "on-failure" },
+  { value: "no", label: "no" },
+];
 
 const containerConflictOptions = [
-  { value: 'auto', label: '自动替换' },
-  { value: 'abort', label: '发现冲突终止' },
-]
+  { value: "auto", label: "自动替换" },
+  { value: "abort", label: "发现冲突终止" },
+];
 
 const imageCleanupOptions = [
-  { value: 'auto', label: '自动清理' },
-  { value: 'keep', label: '保留旧镜像' },
-]
+  { value: "auto", label: "自动清理" },
+  { value: "keep", label: "保留旧镜像" },
+];
 
 const directoryPermissionOptions = [
-  { value: 'none', label: '不处理' },
-  { value: 'chmod777', label: '兼容模式 chmod 777' },
-]
+  { value: "none", label: "不处理" },
+  { value: "chmod777", label: "兼容模式 chmod 777" },
+];
 
 const environmentLines = computed(() => {
-  return deployPreview.value?.envVars?.map((item) => `${item.key}=${item.value}`) || []
-})
+  return (
+    deployPreview.value?.envVars?.map((item) => `${item.key}=${item.value}`) ||
+    []
+  );
+});
 
 const mountLines = computed(() => {
-  return deployPreview.value?.mounts?.map((item) => `${item.hostPath} -> ${item.containerPath}`) || []
-})
+  return (
+    deployPreview.value?.mounts?.map(
+      (item) => `${item.hostPath} -> ${item.containerPath}`
+    ) || []
+  );
+});
 
-const deployFormCard = ref(null)
-const isAdvancedOpen = ref(false)
-const isPackageHistoryOpen = ref(false)
-let deployGsapContext = null
+const deployFormCard = ref(null);
+const isAdvancedOpen = ref(false);
+const isPackageHistoryOpen = ref(false);
+let deployGsapContext = null;
 
 const packageHistory = computed(() => {
-  return deployments.value.filter((item) => item.status === 'package_success')
-})
+  return deployments.value.filter((item) => item.status === "package_success");
+});
 
 const recentPackages = computed(() => {
-  return packageHistory.value.slice(0, 5)
-})
+  return packageHistory.value.slice(0, 5);
+});
 
 const selectedPackageRecord = computed(() => {
-  return packageHistory.value.find((item) => item.deployPath === deployForm.localPackagePath) || null
-})
+  return (
+    packageHistory.value.find(
+      (item) => item.deployPath === deployForm.localPackagePath
+    ) || null
+  );
+});
 
 const displayedHistoryPackage = computed(() => {
-  return selectedPackageRecord.value || recentPackages.value[0] || null
-})
+  return selectedPackageRecord.value || recentPackages.value[0] || null;
+});
 
 const currentPackageSource = computed(() => {
   if (!deployForm.localPackagePath) {
-    return '等待选择'
+    return "等待选择";
   }
 
-  return selectedPackageRecord.value ? '来自打包记录' : '手动选择'
-})
+  return selectedPackageRecord.value ? "来自打包记录" : "手动选择";
+});
 
 const selectedServiceTemplateSummary = computed(() => {
   if (!hasServiceTemplateBridge.value) {
-    return '服务模板能力需要重启桌面窗口后生效'
+    return "服务模板能力需要重启桌面窗口后生效";
   }
 
   if (!selectedServiceTemplate.value) {
-    return '保存后可在打包和部署页复用该服务配置'
+    return "保存后可在打包和部署页复用该服务配置";
   }
 
   const version =
     selectedServiceTemplate.value.lastPackageVersion ||
     selectedServiceTemplate.value.deployConfig?.serviceVersion ||
-    '-'
-  const deployedAt = formatRecordTime(selectedServiceTemplate.value.lastDeployedAt)
-  const packagedAt = formatRecordTime(selectedServiceTemplate.value.lastPackagedAt)
+    "-";
+  const deployedAt = formatRecordTime(
+    selectedServiceTemplate.value.lastDeployedAt
+  );
+  const packagedAt = formatRecordTime(
+    selectedServiceTemplate.value.lastPackagedAt
+  );
 
-  return [`版本 ${version}`, deployedAt ? `部署 ${deployedAt}` : packagedAt ? `打包 ${packagedAt}` : '尚未记录流水'].join(' · ')
-})
+  return [
+    `版本 ${version}`,
+    deployedAt
+      ? `部署 ${deployedAt}`
+      : packagedAt
+      ? `打包 ${packagedAt}`
+      : "尚未记录流水",
+  ].join(" · ");
+});
 
 const serviceTemplateSelectOptions = computed(() => {
   return [
-    { value: '', label: '未选择服务模板' },
+    { value: "", label: "未选择服务模板" },
     ...serviceTemplates.value.map((template) => ({
       value: template.id,
       label: template.name,
     })),
-  ]
-})
+  ];
+});
 
 function applyHistoryPackage(item) {
-  const metadata = item.metadata || {}
-  const imageRef = String(metadata.imageRef || item.projectId || '')
-  const [imageName = deployForm.imageName, imageTag = deployForm.imageTag] = imageRef.split(':')
-  const serviceName = String(metadata.serviceName || imageName || deployForm.serviceName).replace(/[^a-zA-Z0-9._-]+/g, '_')
+  const metadata = item.metadata || {};
+  const imageRef = String(metadata.imageRef || item.projectId || "");
+  const [imageName = deployForm.imageName, imageTag = deployForm.imageTag] =
+    imageRef.split(":");
+  const serviceName = String(
+    metadata.serviceName || imageName || deployForm.serviceName
+  ).replace(/[^a-zA-Z0-9._-]+/g, "_");
 
   updateDeployForm({
-    packageSourceType: 'history',
-    localPackagePath: item.deployPath || '',
+    packageSourceType: "history",
+    localPackagePath: item.deployPath || "",
     serviceName,
-    serviceVersion: String(metadata.serviceVersion || imageTag || deployForm.serviceVersion),
+    serviceVersion: String(
+      metadata.serviceVersion || imageTag || deployForm.serviceVersion
+    ),
     imageName: imageName || deployForm.imageName,
     imageTag: imageTag || deployForm.imageTag,
     containerName: serviceName || deployForm.containerName,
-    containerPort: Number(metadata.servicePort || deployForm.containerPort || 8080),
-  })
-  isPackageHistoryOpen.value = false
+    containerPort: Number(
+      metadata.servicePort || deployForm.containerPort || 8080
+    ),
+  });
+  isPackageHistoryOpen.value = false;
 }
 
 function togglePackageHistoryOpen() {
-  isPackageHistoryOpen.value = !isPackageHistoryOpen.value
+  isPackageHistoryOpen.value = !isPackageHistoryOpen.value;
 }
 
 async function saveCurrentServiceTemplate() {
-  await saveServiceTemplateFromDeploy()
+  await saveServiceTemplateFromDeploy();
 }
 
 async function createServiceTemplateCopy() {
-  const name = window.prompt('服务模板名称', deployForm.serviceName || selectedServiceTemplate.value?.name || '')
+  const name = window.prompt(
+    "服务模板名称",
+    deployForm.serviceName || selectedServiceTemplate.value?.name || ""
+  );
 
   if (name === null) {
-    return
+    return;
   }
 
   await saveServiceTemplateFromDeploy({
     createNew: true,
     name,
-  })
+  });
 }
 
 async function removeSelectedServiceTemplate() {
   if (!selectedServiceTemplate.value) {
-    return
+    return;
   }
 
-  const confirmed = window.confirm(`确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`)
+  const confirmed = window.confirm(
+    `确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`
+  );
 
   if (!confirmed) {
-    return
+    return;
   }
 
-  await deleteServiceTemplate(selectedServiceTemplateId.value)
+  await deleteServiceTemplate(selectedServiceTemplateId.value);
 }
 
 function getFileName(filePath) {
-  const value = String(filePath || '').trim()
+  const value = String(filePath || "").trim();
 
   if (!value) {
-    return ''
+    return "";
   }
 
-  return value.split(/[\\/]/).filter(Boolean).pop() || value
+  return value.split(/[\\/]/).filter(Boolean).pop() || value;
 }
 
 function getPackageTitle(item) {
-  const metadata = item?.metadata || {}
-  return metadata.imageRef || item?.projectId || metadata.serviceName || item?.artifactName || '镜像包'
+  const metadata = item?.metadata || {};
+  return (
+    metadata.imageRef ||
+    item?.projectId ||
+    metadata.serviceName ||
+    item?.artifactName ||
+    "镜像包"
+  );
 }
 
 function getPackageSubtitle(item) {
-  const metadata = item?.metadata || {}
-  const version = metadata.serviceVersion ? `版本 ${metadata.serviceVersion}` : '未记录版本'
-  const fileName = getFileName(item?.deployPath || '')
+  const metadata = item?.metadata || {};
+  const version = metadata.serviceVersion
+    ? `版本 ${metadata.serviceVersion}`
+    : "未记录版本";
+  const fileName = getFileName(item?.deployPath || "");
 
-  return [version, fileName].filter(Boolean).join(' · ')
+  return [version, fileName].filter(Boolean).join(" · ");
 }
 
 function formatRecordTime(value) {
   if (!value) {
-    return ''
+    return "";
   }
 
-  const timestamp = Date.parse(value)
+  const timestamp = Date.parse(value);
 
   if (!Number.isFinite(timestamp)) {
-    return String(value)
+    return String(value);
   }
 
-  return new Intl.DateTimeFormat('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(timestamp))
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(timestamp));
 }
 
 function toggleAdvancedOpen() {
-  isAdvancedOpen.value = !isAdvancedOpen.value
+  isAdvancedOpen.value = !isAdvancedOpen.value;
 }
 
 function animateSummary() {
-  const selector = deployGsapContext?.selector
+  const selector = deployGsapContext?.selector;
 
   if (!selector) {
-    return
+    return;
   }
 
   gsap.fromTo(
-    selector('.deploy-package-picker-row'),
+    selector(".deploy-package-picker-row"),
     { autoAlpha: 0.82, y: 4 },
-    { autoAlpha: 1, y: 0, duration: 0.2, ease: 'power3.out', overwrite: 'auto' },
-  )
+    { autoAlpha: 1, y: 0, duration: 0.2, ease: "power3.out", overwrite: "auto" }
+  );
 }
 
 function animateActivePackage() {
-  const activeItem = deployFormCard.value?.querySelector('.deploy-history-item.active')
+  const activeItem = deployFormCard.value?.querySelector(
+    ".deploy-history-item.active"
+  );
 
   if (!activeItem) {
-    return
+    return;
   }
 
   gsap.fromTo(
     activeItem,
     { scale: 0.985 },
-    { scale: 1, duration: 0.18, ease: 'power3.out', overwrite: 'auto', clearProps: 'transform' },
-  )
+    {
+      scale: 1,
+      duration: 0.18,
+      ease: "power3.out",
+      overwrite: "auto",
+      clearProps: "transform",
+    }
+  );
 }
 
 onMounted(() => {
-  loadServiceTemplates()
-  refreshDeployPreview()
+  loadServiceTemplates();
+  refreshDeployPreview();
 
   if (!deployFormCard.value) {
-    return
+    return;
   }
 
   deployGsapContext = gsap.context(() => {
-    gsap.from('.deploy-package-picker-row', {
+    gsap.from(".deploy-package-picker-row", {
       autoAlpha: 0,
       y: 8,
       duration: 0.24,
-      ease: 'power3.out',
-    })
+      ease: "power3.out",
+    });
 
-    gsap.from('.deploy-section', {
+    gsap.from(".deploy-section", {
       autoAlpha: 0,
       y: 8,
       duration: 0.24,
-      ease: 'power3.out',
+      ease: "power3.out",
       stagger: 0.035,
       delay: 0.04,
-    })
-  }, deployFormCard.value)
-})
+    });
+  }, deployFormCard.value);
+});
 
 onUnmounted(() => {
-  deployGsapContext?.revert()
-})
+  deployGsapContext?.revert();
+});
 
 watch(
   () => [
@@ -288,32 +338,39 @@ watch(
     deployForm.containerName,
   ],
   async () => {
-    await nextTick()
-    animateSummary()
-    animateActivePackage()
+    await nextTick();
+    animateSummary();
+    animateActivePackage();
   },
-  { flush: 'post' },
-)
+  { flush: "post" }
+);
 
 watch(isAdvancedOpen, async (isOpen) => {
-  await nextTick()
+  await nextTick();
 
   if (!isOpen) {
-    return
+    return;
   }
 
-  const selector = deployGsapContext?.selector
+  const selector = deployGsapContext?.selector;
 
   if (!selector) {
-    return
+    return;
   }
 
   gsap.fromTo(
-    selector('.deploy-advanced-body .field, .deploy-advanced-body .field-row'),
+    selector(".deploy-advanced-body .field, .deploy-advanced-body .field-row"),
     { autoAlpha: 0, y: 6 },
-    { autoAlpha: 1, y: 0, duration: 0.2, ease: 'power3.out', stagger: 0.025, overwrite: 'auto' },
-  )
-})
+    {
+      autoAlpha: 1,
+      y: 0,
+      duration: 0.2,
+      ease: "power3.out",
+      stagger: 0.025,
+      overwrite: "auto",
+    }
+  );
+});
 </script>
 
 <template>
@@ -324,8 +381,14 @@ watch(isAdvancedOpen, async (isOpen) => {
           <p class="eyebrow">Remote Deploy</p>
           <h3>镜像包部署</h3>
         </div>
-        <span class="state-pill" :class="{ success: deployResult?.ok, failed: deployResult && !deployResult.ok }">
-          {{ isDeploying ? 'Deploying' : deployResult?.status || 'Idle' }}
+        <span
+          class="state-pill"
+          :class="{
+            success: deployResult?.ok,
+            failed: deployResult && !deployResult.ok,
+          }"
+        >
+          {{ isDeploying ? "Deploying" : deployResult?.status || "Idle" }}
         </span>
       </div>
 
@@ -352,7 +415,7 @@ watch(isAdvancedOpen, async (isOpen) => {
                 :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
                 @click="saveCurrentServiceTemplate"
               >
-                {{ selectedServiceTemplate ? '更新服务' : '保存服务' }}
+                {{ selectedServiceTemplate ? "更新服务" : "保存服务" }}
               </button>
               <button
                 type="button"
@@ -394,7 +457,10 @@ watch(isAdvancedOpen, async (isOpen) => {
                   :value="deployForm.localPackagePath || '还没有选择镜像包'"
                   type="text"
                   readonly
-                  :title="deployForm.localPackagePath || '选择 tar.gz，或从最近镜像包中选择'"
+                  :title="
+                    deployForm.localPackagePath ||
+                    '选择 tar.gz，或从最近镜像包中选择'
+                  "
                 />
               </label>
               <button
@@ -418,13 +484,19 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <span class="field-prompt">最近镜像包</span>
                 <strong>选择已有打包结果</strong>
               </div>
-              <span class="deploy-count-pill">{{ packageHistory.length }} 条</span>
+              <span class="deploy-count-pill"
+                >{{ packageHistory.length }} 条</span
+              >
             </div>
 
             <button
               type="button"
               class="deploy-history-trigger"
-              :class="{ active: deployForm.localPackagePath === displayedHistoryPackage.deployPath }"
+              :class="{
+                active:
+                  deployForm.localPackagePath ===
+                  displayedHistoryPackage.deployPath,
+              }"
               :aria-expanded="isPackageHistoryOpen"
               @click="togglePackageHistoryOpen"
             >
@@ -435,8 +507,16 @@ watch(isAdvancedOpen, async (isOpen) => {
                 </small>
               </span>
               <span class="deploy-history-side">
-                <small>{{ formatRecordTime(displayedHistoryPackage.createdAt) }}</small>
-                <b>{{ isPackageHistoryOpen ? '收起' : recentPackages.length > 1 ? '更多' : '选择' }}</b>
+                <small>{{
+                  formatRecordTime(displayedHistoryPackage.createdAt)
+                }}</small>
+                <b>{{
+                  isPackageHistoryOpen
+                    ? "收起"
+                    : recentPackages.length > 1
+                    ? "更多"
+                    : "选择"
+                }}</b>
               </span>
             </button>
 
@@ -447,16 +527,24 @@ watch(isAdvancedOpen, async (isOpen) => {
                   :key="item.id"
                   type="button"
                   class="deploy-history-item"
-                  :class="{ active: deployForm.localPackagePath === item.deployPath }"
+                  :class="{
+                    active: deployForm.localPackagePath === item.deployPath,
+                  }"
                   @click="applyHistoryPackage(item)"
                 >
                   <span class="deploy-history-copy">
                     <strong>{{ getPackageTitle(item) }}</strong>
-                    <small :title="item.deployPath">{{ getPackageSubtitle(item) }}</small>
+                    <small :title="item.deployPath">{{
+                      getPackageSubtitle(item)
+                    }}</small>
                   </span>
                   <span class="deploy-history-side">
                     <small>{{ formatRecordTime(item.createdAt) }}</small>
-                    <b>{{ deployForm.localPackagePath === item.deployPath ? '已选' : '选择' }}</b>
+                    <b>{{
+                      deployForm.localPackagePath === item.deployPath
+                        ? "已选"
+                        : "选择"
+                    }}</b>
                   </span>
                 </button>
               </div>
@@ -477,7 +565,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <input
                   :value="deployForm.containerName"
                   type="text"
-                  @input="updateDeployForm({ containerName: $event.target.value })"
+                  @input="
+                    updateDeployForm({ containerName: $event.target.value })
+                  "
                 />
               </label>
               <label class="field fill">
@@ -498,7 +588,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                   type="number"
                   min="1"
                   max="65535"
-                  @input="updateDeployForm({ hostPort: Number($event.target.value) })"
+                  @input="
+                    updateDeployForm({ hostPort: Number($event.target.value) })
+                  "
                 />
               </label>
               <label class="field fill">
@@ -508,7 +600,11 @@ watch(isAdvancedOpen, async (isOpen) => {
                   type="number"
                   min="1"
                   max="65535"
-                  @input="updateDeployForm({ containerPort: Number($event.target.value) })"
+                  @input="
+                    updateDeployForm({
+                      containerPort: Number($event.target.value),
+                    })
+                  "
                 />
               </label>
             </div>
@@ -528,7 +624,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <input
                   :value="deployForm.serviceName"
                   type="text"
-                  @input="updateDeployForm({ serviceName: $event.target.value })"
+                  @input="
+                    updateDeployForm({ serviceName: $event.target.value })
+                  "
                 />
               </label>
               <label class="field fill">
@@ -536,7 +634,12 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <input
                   :value="deployForm.serviceVersion"
                   type="text"
-                  @input="updateDeployForm({ serviceVersion: $event.target.value, imageTag: $event.target.value })"
+                  @input="
+                    updateDeployForm({
+                      serviceVersion: $event.target.value,
+                      imageTag: $event.target.value,
+                    })
+                  "
                 />
               </label>
             </div>
@@ -575,7 +678,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <input
                   :value="deployForm.remoteBaseDir"
                   type="text"
-                  @input="updateDeployForm({ remoteBaseDir: $event.target.value })"
+                  @input="
+                    updateDeployForm({ remoteBaseDir: $event.target.value })
+                  "
                 />
               </label>
               <label class="field fill">
@@ -583,19 +688,28 @@ watch(isAdvancedOpen, async (isOpen) => {
                 <input
                   :value="deployForm.remotePackageDir"
                   type="text"
-                  @input="updateDeployForm({ remotePackageDir: $event.target.value })"
+                  @input="
+                    updateDeployForm({ remotePackageDir: $event.target.value })
+                  "
                 />
               </label>
             </div>
           </section>
 
-          <section class="deploy-section deploy-advanced-section" :class="{ expanded: isAdvancedOpen }">
-            <button type="button" class="deploy-section-header advanced-toggle" @click="toggleAdvancedOpen">
+          <section
+            class="deploy-section deploy-advanced-section"
+            :class="{ expanded: isAdvancedOpen }"
+          >
+            <button
+              type="button"
+              class="deploy-section-header advanced-toggle"
+              @click="toggleAdvancedOpen"
+            >
               <span>
                 <span class="field-prompt">高级选项</span>
                 <strong>冲突策略、权限与环境变量</strong>
               </span>
-              <b>{{ isAdvancedOpen ? '收起' : '展开' }}</b>
+              <b>{{ isAdvancedOpen ? "收起" : "展开" }}</b>
             </button>
 
             <transition name="deploy-collapse">
@@ -606,7 +720,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                     <AppSelect
                       :model-value="deployForm.containerConflictStrategy"
                       :options="containerConflictOptions"
-                      @change="updateDeployForm({ containerConflictStrategy: $event })"
+                      @change="
+                        updateDeployForm({ containerConflictStrategy: $event })
+                      "
                     />
                   </label>
                   <label class="field fill">
@@ -614,7 +730,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                     <AppSelect
                       :model-value="deployForm.imageCleanupStrategy"
                       :options="imageCleanupOptions"
-                      @change="updateDeployForm({ imageCleanupStrategy: $event })"
+                      @change="
+                        updateDeployForm({ imageCleanupStrategy: $event })
+                      "
                     />
                   </label>
                 </div>
@@ -625,7 +743,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                     <AppSelect
                       :model-value="deployForm.directoryPermissionMode"
                       :options="directoryPermissionOptions"
-                      @change="updateDeployForm({ directoryPermissionMode: $event })"
+                      @change="
+                        updateDeployForm({ directoryPermissionMode: $event })
+                      "
                     />
                   </label>
                   <label class="field fill">
@@ -634,7 +754,9 @@ watch(isAdvancedOpen, async (isOpen) => {
                       :value="deployForm.extraArgs"
                       type="text"
                       placeholder="例如 --network host"
-                      @input="updateDeployForm({ extraArgs: $event.target.value })"
+                      @input="
+                        updateDeployForm({ extraArgs: $event.target.value })
+                      "
                     />
                   </label>
                 </div>
@@ -656,14 +778,39 @@ watch(isAdvancedOpen, async (isOpen) => {
 
         <div class="package-actions deploy-actions">
           <div class="panel-actions">
-            <button class="primary-button" type="button" :disabled="!canDeploy || isDeploying" @click="runDeployment">
-              {{ isDeploying ? '部署中...' : '开始部署' }}
+            <button
+              class="primary-button"
+              type="button"
+              :disabled="!canDeploy || isDeploying"
+              @click="runDeployment"
+            >
+              {{ isDeploying ? "部署中..." : "开始部署" }}
             </button>
-            <button class="secondary-button" type="button" :disabled="!hasDeploymentBridge" @click="refreshDeployPreview">刷新预览</button>
-            <button class="secondary-button" type="button" @click="emit('open-logs')">查看日志</button>
+            <button
+              class="secondary-button"
+              type="button"
+              :disabled="!hasDeploymentBridge"
+              @click="refreshDeployPreview"
+            >
+              刷新预览
+            </button>
+            <button
+              class="secondary-button"
+              type="button"
+              @click="emit('open-logs')"
+            >
+              查看日志
+            </button>
           </div>
 
-          <div class="deploy-action-status" :class="{ active: isDeploying, ok: deployResult?.ok, failed: deployResult && !deployResult.ok }">
+          <div
+            class="deploy-action-status"
+            :class="{
+              active: isDeploying,
+              ok: deployResult?.ok,
+              failed: deployResult && !deployResult.ok,
+            }"
+          >
             <span></span>
             <p class="command-hint">{{ deployHint }}</p>
           </div>
@@ -677,37 +824,46 @@ watch(isAdvancedOpen, async (isOpen) => {
           <p class="eyebrow">Deployment Plan</p>
           <h3>部署预览</h3>
         </div>
-        <span class="state-pill">{{ deployPreview?.imageRef || 'Pending' }}</span>
+        <span class="state-pill">{{
+          deployPreview?.imageRef || "Pending"
+        }}</span>
       </div>
 
       <dl class="package-meta-grid deploy-meta-grid">
         <div>
           <dt>远程包</dt>
-          <dd>{{ deployPreview?.remotePackagePath || '-' }}</dd>
+          <dd>{{ deployPreview?.remotePackagePath || "-" }}</dd>
         </div>
         <div>
           <dt>发布目录</dt>
-          <dd>{{ deployPreview?.remoteReleaseDir || '-' }}</dd>
+          <dd>{{ deployPreview?.remoteReleaseDir || "-" }}</dd>
         </div>
         <div>
           <dt>镜像引用</dt>
-          <dd>{{ deployPreview?.imageRef || '-' }}</dd>
+          <dd>{{ deployPreview?.imageRef || "-" }}</dd>
         </div>
         <div>
           <dt>容器名</dt>
-          <dd>{{ deployPreview?.containerName || '-' }}</dd>
+          <dd>{{ deployPreview?.containerName || "-" }}</dd>
         </div>
         <div>
           <dt>端口映射</dt>
-          <dd>{{ deployPreview?.hostPort || '-' }} -> {{ deployPreview?.containerPort || '-' }}</dd>
+          <dd>
+            {{ deployPreview?.hostPort || "-" }} ->
+            {{ deployPreview?.containerPort || "-" }}
+          </dd>
         </div>
         <div class="wide">
           <dt>环境变量</dt>
-          <dd class="deploy-inline-list">{{ environmentLines.join(' | ') || '暂无' }}</dd>
+          <dd class="deploy-inline-list">
+            {{ environmentLines.join(" | ") || "暂无" }}
+          </dd>
         </div>
         <div class="wide">
           <dt>挂载目录</dt>
-          <dd class="deploy-inline-list">{{ mountLines.join(' | ') || '暂无' }}</dd>
+          <dd class="deploy-inline-list">
+            {{ mountLines.join(" | ") || "暂无" }}
+          </dd>
         </div>
         <div class="wide">
           <dt>创建目录命令</dt>
@@ -724,11 +880,19 @@ watch(isAdvancedOpen, async (isOpen) => {
       </dl>
 
       <div v-if="deployResult" class="package-result-block">
-        <p :class="['result-message', { ok: deployResult.ok }]">{{ deployResult.message }}</p>
+        <p :class="['result-message', { ok: deployResult.ok }]">
+          {{ deployResult.message }}
+        </p>
         <div class="command-meta">
-          <span class="command-stat">耗时: {{ deployResult.durationMs }} ms</span>
-          <span class="command-stat">容器: {{ deployResult.containerName || '-' }}</span>
-          <span class="command-stat">镜像: {{ deployResult.imageRef || '-' }}</span>
+          <span class="command-stat"
+            >耗时: {{ deployResult.durationMs }} ms</span
+          >
+          <span class="command-stat"
+            >容器: {{ deployResult.containerName || "-" }}</span
+          >
+          <span class="command-stat"
+            >镜像: {{ deployResult.imageRef || "-" }}</span
+          >
         </div>
       </div>
     </section>

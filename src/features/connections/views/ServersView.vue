@@ -12,11 +12,15 @@ const {
   isSavingServer,
   isCreatingServer,
   needsRetest,
+  serverMetrics,
+  isLoadingMetrics,
+  metricsError,
   updateForm,
   saveCurrentServer,
   createNewServer,
   testConnection,
   selectPrivateKeyFile,
+  refreshServerMetrics,
 } = useWorkspaceSession()
 </script>
 
@@ -39,6 +43,10 @@ const {
       :target="{ username: form.username, host: form.host, port: form.port }"
       :busy="isTesting"
       :stale="needsRetest"
+      :metrics="serverMetrics"
+      :metrics-loading="isLoadingMetrics"
+      :metrics-error="metricsError"
+      @refresh-metrics="refreshServerMetrics"
     />
   </div>
 </template>

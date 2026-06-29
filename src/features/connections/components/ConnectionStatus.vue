@@ -8,6 +8,7 @@ import {
   Terminal,
   ScrollText,
   Rocket,
+  RotateCw,
 } from '@lucide/vue'
 
 // 展示最近一次 SSH 连接结果和远程环境探测信息。
@@ -32,9 +33,64 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // 服务器资源占用 { cpu, memory, disk }，由 useWorkspaceSession 提供。
+  metrics: {
+    type: Object,
+    default: null,
+  },
+  // 资源数据读取中。
+  metricsLoading: {
+    type: Boolean,
+    default: false,
+  },
+  // 资源数据读取错误信息。
+  metricsError: {
+    type: String,
+    default: '',
+  },
 })
 
+const emit = defineEmits(['refresh-metrics'])
+
 const router = useRouter()
+
+// 三个核心资源指标，转换成可直接渲染的卡片数据。
+const metricTiles = computed(() => {
+  const metrics = props.metrics || {}
+
+  return [
+    buildMetricTile('cpu', 'CPU', metrics.cpu, () => '处理器使用率'),
+    buildMetricTile('memory', '内存', metrics.memory, (data) => `${data.usedLabel} / ${data.totalLabel}`),
+    buildMetricTile('disk', '磁盘', metrics.disk, (data) => `${data.usedLabel} / ${data.totalLabel} · ${data.mount}`),
+  ]
+})
+
+function buildMetricTile(key, label, data, detailFn) {
+  const percent = data?.percent
+  const hasValue = Number.isFinite(percent)
+
+  return {
+    key,
+    label,
+    percentLabel: hasValue ? `${percent}%` : '—',
+    width: hasValue ? `${percent}%` : '0%',
+    detail: hasValue ? detailFn(data) : '无法获取',
+    tone: hasValue ? metricTone(percent) : 'empty',
+  }
+}
+
+// 阈值染色：绿(<70) / 琥珀(70-90) / 红(>=90)，颜色承载健康度语义。
+function metricTone(percent) {
+  if (percent >= 90) {
+    return 'danger'
+  }
+
+  if (percent >= 70) {
+    return 'warn'
+  }
+
+  return 'ok'
+}
 
 // 横幅状态：成功 / 需重测 / 失败。
 const bannerState = computed(() => {
@@ -70,16 +126,18 @@ const targetSummary = computed(() => {
   return `${username}@${host}:${port}`
 })
 
-const identityDetails = computed(() => [
-  { label: '用户', value: props.result?.remote?.username || '-' },
-  { label: '主机', value: props.result?.remote?.hostname || '-' },
-  { label: '目录', value: props.result?.remote?.workdir || '-' },
-])
+// 身份信息 + 运行环境合并成一张无边框定义网格，按定义列表渲染而非卡片。
+const serverInfoRows = computed(() => {
+  const remote = props.result?.remote || {}
 
-const environmentDetails = computed(() => [
-  { label: '系统', value: props.result?.remote?.system || '-' },
-  { label: 'Java', value: props.result?.remote?.javaVersion || '-' },
-])
+  return [
+    { label: '用户', value: remote.username || '-', mono: true },
+    { label: '主机', value: remote.hostname || '-', mono: true },
+    { label: '目录', value: remote.workdir || '-', mono: true },
+    { label: '系统', value: remote.system || '-' },
+    { label: 'Java', value: remote.javaVersion || '-' },
+  ]
+})
 
 const quickActions = [
   { label: '执行命令', routeName: 'commands', icon: Terminal },
@@ -95,10 +153,7 @@ function goTo(routeName) {
 <template>
   <section class="status-panel">
     <div class="panel-header">
-      <div>
-        <p class="eyebrow">Connection State</p>
-        <h3>连接状态</h3>
-      </div>
+      <h3>连接状态</h3>
       <span
         class="state-pill"
         :class="{
@@ -135,23 +190,48 @@ function goTo(routeName) {
       </p>
 
       <div class="status-section">
-        <p class="status-section-title">身份信息</p>
-        <dl class="meta-grid">
-          <div v-for="item in identityDetails" :key="item.label" class="meta-row">
-            <dt>{{ item.label }}</dt>
-            <dd>{{ item.value }}</dd>
+        <p class="status-section-title">服务器信息</p>
+        <dl class="info-grid">
+          <div v-for="row in serverInfoRows" :key="row.label" class="info-row">
+            <dt>{{ row.label }}</dt>
+            <dd :class="{ mono: row.mono }" :title="row.value">{{ row.value }}</dd>
           </div>
         </dl>
       </div>
 
-      <div class="status-section">
-        <p class="status-section-title">运行环境</p>
-        <dl class="meta-grid">
-          <div v-for="item in environmentDetails" :key="item.label" class="meta-row">
-            <dt>{{ item.label }}</dt>
-            <dd>{{ item.value }}</dd>
+      <div v-if="result.ok && !stale" class="status-section">
+        <div class="status-section-head">
+          <p class="status-section-title">服务器资源</p>
+          <button
+            class="metrics-refresh"
+            type="button"
+            :disabled="metricsLoading"
+            @click="emit('refresh-metrics')"
+          >
+            <RotateCw :size="13" :class="{ spinning: metricsLoading }" aria-hidden="true" />
+            {{ metricsLoading ? '读取中' : '刷新' }}
+          </button>
+        </div>
+
+        <p v-if="metricsError" class="result-message warning">{{ metricsError }}</p>
+
+        <div class="metric-tiles">
+          <div
+            v-for="tile in metricTiles"
+            :key="tile.key"
+            class="metric-tile"
+            :class="tile.tone"
+          >
+            <div class="metric-tile-head">
+              <span>{{ tile.label }}</span>
+              <strong>{{ tile.percentLabel }}</strong>
+            </div>
+            <div class="metric-bar">
+              <span :style="{ width: tile.width }"></span>
+            </div>
+            <small :title="tile.detail">{{ tile.detail }}</small>
           </div>
-        </dl>
+        </div>
       </div>
 
       <div v-if="result.ok && !stale" class="status-section">

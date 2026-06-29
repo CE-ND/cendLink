@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { gsap } from 'gsap'
+import { FolderTree, Cable, ArrowRight, CornerDownRight } from '@lucide/vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { parseNginxConfig } from '../utils/nginxConfigParser.js'
 import { diffConfigs } from '../utils/nginxConfigEditor.js'
@@ -68,6 +70,8 @@ const mountRows = ref([])
 const configFiles = ref([])
 const selectedConfigId = ref('')
 const detailServiceId = ref('')
+const detailPanelRef = ref(null)
+let detailEntranceMm = null
 const isLoading = ref(false)
 const loadError = ref('')
 const configLoadError = ref('')
@@ -192,6 +196,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleDetailKeydown)
+  detailEntranceMm?.revert()
 })
 
 watch(routeContainerId, () => {
@@ -212,6 +217,19 @@ watch(serviceCards, (cards) => {
   if (detailServiceId.value && !cards.some((service) => service.id === detailServiceId.value)) {
     detailServiceId.value = ''
   }
+})
+
+// 详情模态框入场:面板淡入上浮 + 路由行错峰,遵循减弱动效偏好。
+watch(detailService, async (service) => {
+  detailEntranceMm?.revert()
+  detailEntranceMm = null
+
+  if (!service) {
+    return
+  }
+
+  await nextTick()
+  playDetailEntrance()
 })
 
 async function loadNginxConfigInfo() {
@@ -1337,6 +1355,40 @@ function openServiceDetail(service) {
   detailServiceId.value = service.id
 }
 
+function playDetailEntrance() {
+  const panel = detailPanelRef.value
+
+  if (!panel) {
+    return
+  }
+
+  // gsap.matchMedia 在偏好减弱动效时跳过动画,直接呈现静态版面。
+  detailEntranceMm = gsap.matchMedia()
+  detailEntranceMm.add(
+    {
+      animate: '(prefers-reduced-motion: no-preference)',
+      reduce: '(prefers-reduced-motion: reduce)',
+    },
+    (ctx) => {
+      if (ctx.conditions.reduce) {
+        return
+      }
+
+      const frontendRows = panel.querySelectorAll('.nginx-detail-section.frontend .nginx-route-row')
+      const backendRows = panel.querySelectorAll('.nginx-detail-section.backend .nginx-route-row')
+      const rowVars = { autoAlpha: 0, y: 10, duration: 0.3, stagger: { each: 0.05 } }
+      const timeline = gsap.timeline({ defaults: { ease: 'expo.out' } })
+
+      timeline
+        .from(panel, { autoAlpha: 0, y: 14, scale: 0.985, duration: 0.34 })
+        // 前后端两列同时错峰入场:同一行号在两列里一起出现,而不是先填满左列。
+        .from(frontendRows, { ...rowVars }, '-=0.18')
+        .from(backendRows, { ...rowVars }, '<')
+    },
+    panel,
+  )
+}
+
 function closeServiceDetail() {
   detailServiceId.value = ''
 }
@@ -2033,43 +2085,37 @@ function dismissSaveResult() {
       @click.self="closeServiceDetail"
     >
       <aside
+        ref="detailPanelRef"
         class="nginx-detail-panel"
         role="dialog"
         aria-modal="true"
         :aria-label="`${detailService.name} 路由详情`"
       >
         <header class="nginx-detail-head">
-          <div>
-            <p class="eyebrow">Service Detail</p>
-            <h3>{{ detailService.name }}</h3>
+          <div class="nginx-detail-head-main">
+            <div class="nginx-detail-title-row">
+              <h3>{{ detailService.name }}</h3>
+              <span class="nginx-detail-alias">{{ detailService.alias }}</span>
+            </div>
             <small>{{ detailService.domainLabel }} · {{ detailService.listenLabel }}</small>
           </div>
-          <button class="nginx-detail-close" type="button" aria-label="关闭详情" @click="closeServiceDetail">
-            ×
-          </button>
+          <div class="nginx-detail-head-side">
+            <div class="nginx-detail-stats">
+              <span :class="detailService.statusTone">{{ detailService.statusLabel }}</span>
+              <span><strong>{{ detailService.frontend.length }}</strong> 前端</span>
+              <span><strong>{{ detailService.backend.length }}</strong> 后端</span>
+              <span v-if="detailService.hasHttps">HTTPS</span>
+            </div>
+            <button class="nginx-detail-close" type="button" aria-label="关闭详情" @click="closeServiceDetail">
+              ×
+            </button>
+          </div>
         </header>
-
-        <div class="nginx-detail-overview">
-          <div>
-            <span>{{ detailService.alias }}</span>
-            <strong>{{ detailService.frontend.length + detailService.backend.length }} 条路由规则</strong>
-            <small>匹配依据：{{ detailService.matchLabel }}</small>
-          </div>
-          <div class="nginx-detail-summary">
-            <span :class="detailService.statusTone">{{ detailService.statusLabel }}</span>
-            <span>{{ detailService.frontend.length }} 前端入口</span>
-            <span>{{ detailService.backend.length }} 后端接口</span>
-            <span v-if="detailService.hasHttps">HTTPS</span>
-          </div>
-        </div>
 
         <div class="nginx-detail-columns">
           <section class="nginx-detail-section frontend" :class="{ empty: !detailService.frontend.length }">
             <header>
-              <div>
-                <span>Frontend</span>
-                <strong>前端入口</strong>
-              </div>
+              <strong>前端入口</strong>
               <b>{{ detailService.frontend.length }}</b>
             </header>
 
@@ -2077,30 +2123,25 @@ function dismissSaveResult() {
               <article
                 v-for="route in detailService.frontend"
                 :key="route.id"
-                class="nginx-detail-route"
+                class="nginx-route-row frontend"
               >
-                <header>
-                  <strong>{{ route.path }}</strong>
-                  <span>{{ route.kindLabel }}</span>
-                </header>
-                <dl>
-                  <div>
-                    <dt>目标目录</dt>
-                    <dd :title="route.targetLabel">{{ route.targetLabel }}</dd>
+                <span class="nginx-route-icon" aria-hidden="true">
+                  <FolderTree :size="15" :stroke-width="2" />
+                </span>
+                <div class="nginx-route-body">
+                  <div class="nginx-route-flow">
+                    <strong class="nginx-route-path" :title="route.path">{{ route.path }}</strong>
+                    <ArrowRight class="nginx-route-arrow" :size="14" :stroke-width="2.4" aria-hidden="true" />
+                    <span class="nginx-route-target" :title="route.targetLabel">{{ route.targetLabel }}</span>
                   </div>
-                  <div>
-                    <dt>回退规则</dt>
-                    <dd :title="route.fallbackLabel">{{ route.fallbackLabel }}</dd>
+                  <p v-if="route.fallbackLabel" class="nginx-route-sub" :title="route.fallbackLabel">
+                    <CornerDownRight class="nginx-route-turn" :size="12" :stroke-width="2" aria-hidden="true" /><em>回退</em>{{ route.fallbackLabel }}
+                  </p>
+                  <div class="nginx-route-meta">
+                    <span class="nginx-route-source">{{ route.sourceLabel }}<template v-if="route.matchReason"> · {{ route.matchReason }}</template></span>
+                    <span class="nginx-route-kind">{{ route.kindLabel }}</span>
                   </div>
-                  <div>
-                    <dt>来源</dt>
-                    <dd :title="route.sourceLabel">{{ route.sourceLabel }}</dd>
-                  </div>
-                  <div>
-                    <dt>归类</dt>
-                    <dd :title="route.matchReason">{{ route.matchReason }}</dd>
-                  </div>
-                </dl>
+                </div>
               </article>
             </div>
             <p v-else class="nginx-detail-empty">未配置前端入口</p>
@@ -2108,10 +2149,7 @@ function dismissSaveResult() {
 
           <section class="nginx-detail-section backend" :class="{ empty: !detailService.backend.length }">
             <header>
-              <div>
-                <span>Backend</span>
-                <strong>后端接口</strong>
-              </div>
+              <strong>后端接口</strong>
               <b>{{ detailService.backend.length }}</b>
             </header>
 
@@ -2119,30 +2157,25 @@ function dismissSaveResult() {
               <article
                 v-for="route in detailService.backend"
                 :key="route.id"
-                class="nginx-detail-route"
+                class="nginx-route-row backend"
               >
-                <header>
-                  <strong>{{ route.path }}</strong>
-                  <span>{{ route.kindLabel }}</span>
-                </header>
-                <dl>
-                  <div>
-                    <dt>代理到</dt>
-                    <dd :title="route.targetLabel">{{ route.targetLabel }}</dd>
+                <span class="nginx-route-icon" aria-hidden="true">
+                  <Cable :size="15" :stroke-width="2" />
+                </span>
+                <div class="nginx-route-body">
+                  <div class="nginx-route-flow">
+                    <strong class="nginx-route-path" :title="route.path">{{ route.path }}</strong>
+                    <ArrowRight class="nginx-route-arrow" :size="14" :stroke-width="2.4" aria-hidden="true" />
+                    <span class="nginx-route-target" :title="route.targetLabel">{{ route.targetLabel }}</span>
                   </div>
-                  <div>
-                    <dt>监听</dt>
-                    <dd :title="route.listenLabel">{{ route.listenLabel }}</dd>
+                  <p v-if="route.listenLabel" class="nginx-route-sub" :title="route.listenLabel">
+                    <CornerDownRight class="nginx-route-turn" :size="12" :stroke-width="2" aria-hidden="true" /><em>监听</em>{{ route.listenLabel }}
+                  </p>
+                  <div class="nginx-route-meta">
+                    <span class="nginx-route-source">{{ route.sourceLabel }}<template v-if="route.matchReason"> · {{ route.matchReason }}</template></span>
+                    <span class="nginx-route-kind">{{ route.kindLabel }}</span>
                   </div>
-                  <div>
-                    <dt>来源</dt>
-                    <dd :title="route.sourceLabel">{{ route.sourceLabel }}</dd>
-                  </div>
-                  <div>
-                    <dt>归类</dt>
-                    <dd :title="route.matchReason">{{ route.matchReason }}</dd>
-                  </div>
-                </dl>
+                </div>
               </article>
             </div>
             <p v-else class="nginx-detail-empty">未配置后端接口</p>
