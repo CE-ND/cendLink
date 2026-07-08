@@ -1,7 +1,8 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
+import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 
 const {
   savedServers,
@@ -29,6 +30,9 @@ const {
 } = useWorkspaceSession()
 
 const emit = defineEmits(['open-logs'])
+
+const pageRef = ref(null)
+usePageEntrance(pageRef)
 
 const extractStrategyOptions = [
   { value: 'clean', label: '清空覆盖' },
@@ -154,7 +158,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="deploy-view frontend-upload-view">
+  <div ref="pageRef" class="deploy-view frontend-upload-view">
     <section class="panel deploy-panel deploy-form-panel frontend-upload-form-panel">
       <div class="panel-header">
         <div>

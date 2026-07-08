@@ -7,7 +7,6 @@ import DeploymentView from '../features/deploy/views/DeploymentView.vue'
 import ImagePackageView from '../features/docker/views/ImagePackageView.vue'
 import FrontendUploadView from '../features/frontend/views/FrontendUploadView.vue'
 import DeployHistoryView from '../features/history/views/DeployHistoryView.vue'
-import SettingsView from '../features/settings/views/SettingsView.vue'
 import AppShell from '../layouts/AppShell.vue'
 
 // 应用使用 hash 路由，适合 Electron 打包后直接加载本地 index.html。
@@ -89,15 +88,6 @@ const routes = [
         meta: {
           eyebrow: 'Deploy History',
           title: '部署记录',
-        },
-      },
-      {
-        path: 'settings',
-        name: 'settings',
-        component: SettingsView,
-        meta: {
-          eyebrow: 'Workspace Settings',
-          title: '设置',
         },
       },
     ],

@@ -1,34 +1,15 @@
 <script setup>
-import CommandRunner from '../components/CommandRunner.vue'
-import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
+import { ref } from 'vue'
+import SshTerminal from '../components/SshTerminal.vue'
+import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 
-// 命令页专注于基于当前 SSH 配置执行一次性远程命令。
-const emit = defineEmits(['open-logs'])
-
-const {
-  commandText,
-  commandResult,
-  isExecutingCommand,
-  canExecuteCommand,
-  commandHint,
-  updateCommandText,
-  executeCommand,
-  clearLogs,
-} = useWorkspaceSession()
+// 命令页现在是一个真·交互式终端，直接复用工作区当前的 SSH 连接。
+const pageRef = ref(null)
+usePageEntrance(pageRef)
 </script>
 
 <template>
-  <div class="command-view">
-    <CommandRunner
-      :model-value="commandText"
-      :busy="isExecutingCommand"
-      :disabled="!canExecuteCommand"
-      :result="commandResult"
-      :hint="commandHint"
-      @update:model-value="updateCommandText"
-      @execute="executeCommand"
-      @clear="clearLogs"
-      @open-logs="emit('open-logs')"
-    />
+  <div ref="pageRef" class="command-view">
+    <SshTerminal />
   </div>
 </template>

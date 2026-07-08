@@ -32,6 +32,9 @@ const api = {
     getStorageInfo() {
       return ipcRenderer.invoke('data:get-storage-info')
     },
+    openStorageDir() {
+      return ipcRenderer.invoke('data:open-storage-dir')
+    },
   },
   // 本地 Docker 镜像包构建能力：选择 Jar、预览配置、执行打包。
   docker: {
@@ -93,6 +96,42 @@ const api = {
 
       return () => {
         ipcRenderer.removeListener('ssh:command-stream-event', listener)
+      }
+    },
+    // 打开一个持久交互式终端，返回 { ok, id }。size 为 { cols, rows }。
+    openShell(config, size) {
+      return ipcRenderer.invoke('ssh:open-shell', {
+        config,
+        cols: size?.cols,
+        rows: size?.rows,
+      })
+    },
+    // 向终端写入键盘输入。高频、单向，不等待应答。
+    writeShell(id, data) {
+      ipcRenderer.send('ssh:shell-input', { id, data })
+    },
+    // 同步终端窗口尺寸到远端 pty。
+    resizeShell(id, size) {
+      ipcRenderer.send('ssh:shell-resize', {
+        id,
+        cols: size?.cols,
+        rows: size?.rows,
+      })
+    },
+    // 关闭终端会话。
+    closeShell(id) {
+      ipcRenderer.send('ssh:close-shell', id)
+    },
+    // 订阅终端事件（connecting/ready/data/exit/error/closed），返回取消订阅函数。
+    onShellEvent(callback) {
+      const listener = (_event, payload) => {
+        callback(payload)
+      }
+
+      ipcRenderer.on('ssh:shell-event', listener)
+
+      return () => {
+        ipcRenderer.removeListener('ssh:shell-event', listener)
       }
     },
     selectPrivateKeyFile() {

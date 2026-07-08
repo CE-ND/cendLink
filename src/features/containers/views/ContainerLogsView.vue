@@ -11,6 +11,7 @@ import {
   ArrowDownToLine,
   Terminal,
 } from "@lucide/vue";
+import { usePageEntrance } from "../../../composables/usePageEntrance.js";
 
 const CONTAINER_LIST_COMMAND =
   "docker ps -a --format '{{.ID}}|||{{.Names}}|||{{.Image}}|||{{.Status}}|||{{.Ports}}|||{{.CreatedAt}}'";
@@ -42,6 +43,8 @@ const actionMenuStyle = ref({});
 const actionPendingId = ref("");
 const logBodyRef = ref(null);
 const router = useRouter();
+const pageRef = ref(null);
+usePageEntrance(pageRef);
 
 let unsubscribeStream = null;
 
@@ -712,7 +715,7 @@ function formatStreamError(error) {
 </script>
 
 <template>
-  <div class="container-logs-view">
+  <div ref="pageRef" class="container-logs-view">
     <section class="container-list-pane">
       <header class="container-pane-header">
         <div>

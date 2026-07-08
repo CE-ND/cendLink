@@ -6,6 +6,7 @@ import { FolderTree, Cable, ArrowRight, CornerDownRight } from '@lucide/vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { parseNginxConfig } from '../utils/nginxConfigParser.js'
 import { diffConfigs } from '../utils/nginxConfigEditor.js'
+import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 
 const MAX_PATH_TYPE_CHECKS = 32
 const MAX_CONFIG_FILES = 16
@@ -72,6 +73,8 @@ const selectedConfigId = ref('')
 const detailServiceId = ref('')
 const detailPanelRef = ref(null)
 let detailEntranceMm = null
+const pageRef = ref(null)
+usePageEntrance(pageRef)
 const isLoading = ref(false)
 const loadError = ref('')
 const configLoadError = ref('')
@@ -1642,7 +1645,7 @@ function dismissSaveResult() {
 </script>
 
 <template>
-  <div class="nginx-config-view">
+  <div ref="pageRef" class="nginx-config-view">
     <section class="nginx-config-main">
       <div class="nginx-config-body">
         <section class="nginx-workbar" :class="{ 'no-files': !configFiles.length }">

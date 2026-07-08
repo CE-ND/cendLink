@@ -1,25 +1,68 @@
 :root {
+  color-scheme: light;
+
+  /* 中性层 */
   --bg: oklch(97.5% 0.006 245);
-  --chrome: oklch(94% 0.008 245);
   --page-bg: oklch(98.4% 0.005 245);
+  --chrome: oklch(94% 0.008 245);
   --surface: oklch(99% 0.004 245);
-  --surface-muted: oklch(94.5% 0.007 245);
+  --surface-raised: oklch(100% 0 0);
   --surface-subtle: oklch(97.8% 0.005 245);
+  --surface-muted: oklch(94.5% 0.007 245);
   --surface-strong: oklch(20% 0.015 245);
+
+  /* 描边 */
+  --border: oklch(87% 0.008 245);
+  --border-subtle: oklch(90.5% 0.007 245);
+  --border-strong: oklch(79% 0.012 245);
+  --chrome-border: oklch(84.5% 0.01 245);
+
+  /* 文字层级 */
   --text: oklch(26% 0.014 245);
+  --text-mid: oklch(45% 0.012 245);
   --text-muted: oklch(52% 0.012 245);
   --text-soft: oklch(67% 0.01 245);
-  --border: oklch(87% 0.008 245);
-  --chrome-border: oklch(84.5% 0.01 245);
+  --text-faint: oklch(75% 0.01 245);
+  --text-inverse: oklch(99% 0.004 245);
+  /* 恒定对比文字：用于饱和填充（accent/danger 等）之上的文字。
+     亮色主题填充较深→用近白；暗色主题填充被提亮（accent 70%）→翻转为近黑，保证对比度。 */
+  --text-on-fill: oklch(99% 0.004 245);
+
+  /* 品牌与状态基色 */
   --accent: oklch(56% 0.12 185);
   --accent-strong: oklch(48% 0.13 185);
+  --accent-contrast: oklch(99% 0.01 185);
+  --accent-alt: oklch(58% 0.14 285);
+  --accent-blue: oklch(56% 0.11 230);
+
   --success: oklch(55% 0.13 150);
+  --success-text: oklch(38% 0.11 150);
   --danger: oklch(58% 0.16 25);
+  --danger-text: oklch(48% 0.16 25);
+  --danger-border: oklch(72% 0.1 25);
   --warning: oklch(72% 0.14 75);
+  --warning-text: oklch(48% 0.13 75);
+  --info: oklch(57% 0.13 170);
+  --info-text: oklch(38% 0.11 170);
+
+  /* 滚动条 */
+  --scrollbar-thumb: oklch(68% 0.012 245 / 48%);
+  --scrollbar-thumb-hover: oklch(55% 0.015 245 / 72%);
+
+  /* 遮罩与投影（暗色下加深） */
+  --scrim: oklch(20% 0.02 245 / 45%);
+  --scrim-strong: oklch(8% 0.01 245 / 60%);
+  --shadow-color: oklch(30% 0.02 245 / 13%);
+  --shadow-color-strong: oklch(25% 0.035 245 / 26%);
+  --shadow: 0 18px 45px var(--shadow-color);
+
+  /* 终端（两态均为暗色，保持不变） */
   --terminal: oklch(17% 0.014 245);
   --terminal-border: oklch(28% 0.02 245);
   --terminal-text: oklch(84% 0.015 245);
-  --shadow: 0 18px 45px oklch(30% 0.02 245 / 12%);
+  /* 交互式 xterm 舞台底色：亮色主题下为浅底，需与 xterm.js 主题 background 对齐 */
+  --terminal-stage: oklch(97.5% 0.004 230);
+
   --font-sans: 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC',
     'Hiragino Sans GB', 'Noto Sans CJK SC', 'Source Han Sans SC', system-ui, sans-serif;
   --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'SFMono-Regular',
@@ -35,8 +78,101 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/*
+ * 暗色主题：只覆盖中性/文字/状态派生/遮罩投影 token；品牌基色略提亮以在暗底上保持对比。
+ * 结构色已全部语义化为上述 token，故此处翻转即可让全站切换，无需改动组件。
+ */
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: oklch(19% 0.012 245);
+  --page-bg: oklch(16.5% 0.011 245);
+  --chrome: oklch(22% 0.013 245);
+  --surface: oklch(24% 0.014 245);
+  --surface-raised: oklch(27.5% 0.015 245);
+  --surface-subtle: oklch(21.5% 0.013 245);
+  --surface-muted: oklch(26.5% 0.014 245);
+  --surface-strong: oklch(90% 0.01 245);
+
+  --border: oklch(34% 0.014 245);
+  --border-subtle: oklch(30% 0.013 245);
+  --border-strong: oklch(43% 0.016 245);
+  --chrome-border: oklch(32% 0.014 245);
+
+  --text: oklch(93% 0.008 245);
+  --text-mid: oklch(80% 0.01 245);
+  --text-muted: oklch(70% 0.011 245);
+  --text-soft: oklch(65% 0.012 245);
+  --text-faint: oklch(52% 0.012 245);
+  --text-inverse: oklch(20% 0.014 245);
+  /* 暗色主题填充色被提亮（accent 70% 等），故填充上的文字翻转为近黑，避免白字低对比 */
+  --text-on-fill: oklch(20% 0.02 245);
+
+  --accent: oklch(70% 0.13 185);
+  --accent-strong: oklch(78% 0.13 185);
+  --accent-contrast: oklch(18% 0.02 185);
+  --accent-alt: oklch(72% 0.14 285);
+  --accent-blue: oklch(70% 0.12 230);
+
+  --success: oklch(70% 0.14 150);
+  --success-text: oklch(80% 0.13 150);
+  --danger: oklch(68% 0.17 25);
+  --danger-text: oklch(78% 0.15 25);
+  --danger-border: oklch(50% 0.14 25);
+  --warning: oklch(80% 0.14 75);
+  --warning-text: oklch(84% 0.13 75);
+  --info: oklch(70% 0.13 170);
+  --info-text: oklch(80% 0.12 170);
+
+  --scrollbar-thumb: oklch(62% 0.012 245 / 42%);
+  --scrollbar-thumb-hover: oklch(78% 0.015 245 / 62%);
+
+  --scrim: oklch(0% 0 0 / 55%);
+  --scrim-strong: oklch(0% 0 0 / 72%);
+  --shadow-color: oklch(0% 0 0 / 42%);
+  --shadow-color-strong: oklch(0% 0 0 / 58%);
+
+  /* xterm 舞台在暗色下贴近终端底色，避免亮色残块 */
+  --terminal-stage: oklch(20% 0.012 245);
+}
+
 * {
   box-sizing: border-box;
+}
+
+/*
+ * 全局细滚动条：替换 Chromium 默认的粗滚动条+上下箭头按钮，改为细圆角悬浮胶囊，
+ * 与整体精致 UI 统一。仅用 ::-webkit-* 伪元素（Electron=Chromium）；刻意不设标准
+ * scrollbar-width，因为一旦设置会让下方 ::-webkit-scrollbar 自定义样式整体失效。
+ * 透明边框 + background-clip:content-box 让滑块四周留白、显得纤细悬浮。
+ */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 去掉滚动条两端的上下/左右箭头按钮（默认样式里最扎眼的部分）。 */
+::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 body {
@@ -170,12 +306,12 @@ button:disabled {
 
 .window-control:hover {
   color: var(--text);
-  background: oklch(90.5% 0.009 245);
+  background: var(--border-subtle);
 }
 
 .window-control.close:hover {
-  color: oklch(99% 0.004 245);
-  background: oklch(55% 0.16 25);
+  color: var(--text-on-fill);
+  background: var(--danger);
 }
 
 .window-icon {
@@ -281,11 +417,37 @@ h3 {
 }
 
 .nav-list {
+  position: relative;
   display: grid;
   gap: 4px;
 }
 
+/* 导航滑块：独立元素，切页时平滑滑到当前项，位于导航项底层。 */
+.nav-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  border-radius: 7px;
+  background: var(--surface);
+  opacity: 0;
+  transform: translateY(0);
+  transition: opacity 180ms ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.nav-thumb.animated {
+  transition:
+    transform 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
 .nav-item {
+  position: relative;
+  z-index: 1;
   width: 100%;
   height: 36px;
   padding: 0 12px;
@@ -294,22 +456,101 @@ h3 {
   color: var(--text-muted);
   background: transparent;
   text-align: left;
+  transition: color 160ms ease, background-color 160ms ease;
 }
 
-.nav-item:hover,
+.nav-item:hover {
+  color: var(--text);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+}
+
 .nav-item.active {
   color: var(--text);
-  background: var(--surface);
 }
 
 .nav-item.disabled {
   color: var(--text-soft);
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .nav-thumb.animated {
+    transition: opacity 180ms ease;
+  }
+}
+
 .server-list {
   display: grid;
+  flex: 1 1 auto;
+  align-content: start;
   gap: 8px;
+  min-height: 0;
   overflow: auto;
+}
+
+.settings-entry {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.settings-entry:hover {
+  color: var(--text);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+}
+
+.settings-entry svg {
+  flex: 0 0 auto;
+  opacity: 0.9;
+}
+
+/* 侧边栏底部行：设置入口占满剩余宽度，主题快捷开关贴在右侧。 */
+.sidebar-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-footer .settings-entry {
+  flex: 1 1 auto;
+}
+
+.theme-toggle {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.theme-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.theme-toggle svg {
+  flex: 0 0 auto;
 }
 
 .server-list-header {
@@ -341,7 +582,7 @@ h3 {
 
 .server-new-button:hover {
   color: var(--text);
-  border-color: oklch(78% 0.012 245);
+  border-color: var(--border-strong);
   background: var(--surface-muted);
 }
 
@@ -355,7 +596,7 @@ h3 {
   padding: 9px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
-  background: oklch(96.8% 0.006 245);
+  background: var(--surface-subtle);
   text-align: left;
   transition:
     border-color 160ms ease,
@@ -371,19 +612,19 @@ h3 {
 }
 
 .server-row.selected {
-  border-color: oklch(56% 0.12 185 / 32%);
-  background: oklch(56% 0.12 185 / 7%);
-  box-shadow: inset 0 0 0 1px oklch(56% 0.12 185 / 7%);
+  border-color: color-mix(in oklch, var(--accent) 32%, transparent);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 7%, transparent);
 }
 
 .server-row:hover {
-  border-color: oklch(56% 0.12 185 / 24%);
+  border-color: color-mix(in oklch, var(--accent) 24%, transparent);
   background: var(--surface);
 }
 
 .server-row.selected:hover {
-  border-color: oklch(56% 0.12 185 / 36%);
-  background: oklch(56% 0.12 185 / 9%);
+  border-color: color-mix(in oklch, var(--accent) 36%, transparent);
+  background: color-mix(in oklch, var(--accent) 9%, transparent);
 }
 
 .server-row-button:hover {
@@ -438,7 +679,7 @@ h3 {
   align-items: center;
   justify-content: flex-start;
   border-color: var(--border);
-  background: oklch(96% 0.006 245);
+  background: var(--surface-muted);
   color: var(--text-muted);
 }
 
@@ -447,8 +688,8 @@ h3 {
 }
 
 .server-row-empty .status-dot {
-  background: oklch(75% 0.01 245);
-  box-shadow: 0 0 0 4px oklch(75% 0.01 245 / 16%);
+  background: var(--text-faint);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--text-faint) 16%, transparent);
 }
 
 .server-tag {
@@ -458,7 +699,7 @@ h3 {
   padding: 0 6px;
   border-radius: 999px;
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 10%);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
   font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
@@ -480,8 +721,8 @@ h3 {
 .server-pin-button:hover,
 .server-pin-button.active {
   color: var(--accent-strong);
-  border-color: oklch(56% 0.12 185 / 35%);
-  background: oklch(56% 0.12 185 / 8%);
+  border-color: color-mix(in oklch, var(--accent) 35%, transparent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
 }
 
 .status-dot {
@@ -490,17 +731,17 @@ h3 {
   flex: 0 0 auto;
   border-radius: 99px;
   background: var(--accent);
-  box-shadow: 0 0 0 4px oklch(56% 0.12 185 / 14%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .status-dot.connected {
   background: var(--success);
-  box-shadow: 0 0 0 4px oklch(55% 0.13 150 / 14%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--success) 14%, transparent);
 }
 
 .status-dot.failed {
   background: var(--danger);
-  box-shadow: 0 0 0 4px oklch(58% 0.16 25 / 14%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 .workspace {
@@ -553,20 +794,20 @@ h3 {
 .bridge-badge.ready,
 .state-pill.success {
   color: var(--success);
-  border-color: oklch(55% 0.13 150 / 35%);
-  background: oklch(55% 0.13 150 / 9%);
+  border-color: color-mix(in oklch, var(--success) 35%, transparent);
+  background: color-mix(in oklch, var(--success) 9%, transparent);
 }
 
 .state-pill.failed {
   color: var(--danger);
-  border-color: oklch(58% 0.16 25 / 35%);
-  background: oklch(58% 0.16 25 / 9%);
+  border-color: color-mix(in oklch, var(--danger) 35%, transparent);
+  background: color-mix(in oklch, var(--danger) 9%, transparent);
 }
 
 .state-pill.warning {
-  color: oklch(57% 0.11 75);
-  border-color: oklch(72% 0.14 75 / 35%);
-  background: oklch(72% 0.14 75 / 12%);
+  color: var(--warning-text);
+  border-color: color-mix(in oklch, var(--warning) 35%, transparent);
+  background: color-mix(in oklch, var(--warning) 12%, transparent);
 }
 
 .content-grid {
@@ -717,11 +958,11 @@ h3 {
 }
 
 .container-row:hover {
-  background: oklch(56% 0.12 185 / 6%);
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
 }
 
 .container-row.active {
-  background: oklch(56% 0.12 185 / 11%);
+  background: color-mix(in oklch, var(--accent) 11%, transparent);
 }
 
 .container-row-select {
@@ -740,7 +981,7 @@ h3 {
 .container-row-select:focus-visible,
 .container-action-trigger:focus-visible,
 .container-action-menu button:focus-visible {
-  outline: 2px solid oklch(58% 0.12 185 / 45%);
+  outline: 2px solid color-mix(in oklch, var(--accent) 45%, transparent);
   outline-offset: -2px;
 }
 
@@ -780,10 +1021,10 @@ h3 {
 .container-kind-badge {
   flex: 0 0 auto;
   padding: 2px 6px;
-  border: 1px solid oklch(57% 0.13 170 / 22%);
+  border: 1px solid color-mix(in oklch, var(--info) 22%, transparent);
   border-radius: 999px;
-  color: oklch(38% 0.11 170);
-  background: oklch(57% 0.13 170 / 10%);
+  color: var(--info-text);
+  background: color-mix(in oklch, var(--info) 10%, transparent);
   font-size: 11px;
   font-weight: 800;
   line-height: 1.2;
@@ -861,7 +1102,7 @@ h3 {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 12px 28px oklch(22% 0.02 240 / 16%);
+  box-shadow: 0 12px 28px var(--shadow-color-strong);
 }
 
 .container-action-menu button {
@@ -880,7 +1121,7 @@ h3 {
 }
 
 .container-action-menu button:hover {
-  background: oklch(56% 0.12 185 / 10%);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .container-action-menu button.danger {
@@ -888,7 +1129,7 @@ h3 {
 }
 
 .container-action-menu button.danger:hover {
-  background: oklch(58% 0.16 25 / 10%);
+  background: color-mix(in oklch, var(--danger) 10%, transparent);
 }
 
 .container-action-menu-transition-enter-active,
@@ -919,16 +1160,16 @@ h3 {
 
 .container-status-dot.running {
   background: var(--success);
-  box-shadow: 0 0 0 3px oklch(55% 0.13 150 / 12%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 12%, transparent);
 }
 
 .container-status-dot.exited {
   background: var(--danger);
-  box-shadow: 0 0 0 3px oklch(58% 0.16 25 / 10%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 10%, transparent);
 }
 
 .container-status-dot.neutral {
-  background: oklch(64% 0.02 220);
+  background: var(--text-soft);
 }
 
 /* 跟随日志时,状态点呼吸脉冲,传达"实时"语义。 */
@@ -939,10 +1180,10 @@ h3 {
 @keyframes container-log-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 oklch(55% 0.13 150 / 45%);
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 45%, transparent);
   }
   60% {
-    box-shadow: 0 0 0 5px oklch(55% 0.13 150 / 0%);
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--success) 0%, transparent);
   }
 }
 
@@ -1004,15 +1245,15 @@ h3 {
 
 .container-state.failed {
   color: var(--danger);
-  background: oklch(58% 0.16 25 / 8%);
+  background: color-mix(in oklch, var(--danger) 8%, transparent);
 }
 
 .container-log-output {
   min-height: 0;
   padding: 12px 0;
   overflow: auto;
-  color: oklch(27% 0.015 245);
-  background: oklch(97% 0.004 245);
+  color: var(--text);
+  background: var(--surface-subtle);
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.62;
@@ -1029,12 +1270,12 @@ h3 {
   gap: 12px;
   height: 100%;
   padding: 24px;
-  color: oklch(62% 0.02 245);
+  color: var(--text-muted);
   text-align: center;
 }
 
 .container-log-empty svg {
-  color: oklch(52% 0.02 245);
+  color: var(--text-muted);
   opacity: 0.85;
 }
 
@@ -1053,24 +1294,24 @@ h3 {
 }
 
 .container-log-line:hover {
-  background: oklch(93% 0.01 245 / 70%);
+  background: color-mix(in oklch, var(--chrome) 70%, transparent);
 }
 
 .container-log-line.error {
-  color: oklch(43% 0.15 28);
+  color: var(--danger-text);
 }
 
 .container-log-line.warn {
-  color: oklch(42% 0.1 75);
+  color: var(--warning-text);
 }
 
 .container-log-line.sql {
-  color: oklch(38% 0.06 235);
+  color: var(--text-mid);
 }
 
 .container-log-time {
   overflow: hidden;
-  color: oklch(52% 0.025 245);
+  color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1081,8 +1322,8 @@ h3 {
 }
 
 .primary-button.danger {
-  background: oklch(55% 0.16 25);
-  box-shadow: 0 8px 22px oklch(55% 0.16 25 / 18%);
+  background: var(--danger);
+  box-shadow: 0 8px 22px color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
 .nginx-config-view {
@@ -1138,8 +1379,8 @@ h3 {
 }
 
 .nginx-back-button:hover {
-  border-color: oklch(78% 0.012 245);
-  background: oklch(96% 0.006 245);
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
 }
 
 .nginx-summary {
@@ -1317,7 +1558,7 @@ h3 {
   gap: 10px;
   min-width: 0;
   padding-bottom: 9px;
-  border-bottom: 1px solid oklch(86% 0.01 245);
+  border-bottom: 1px solid var(--border);
 }
 
 .nginx-mount-group-head > div {
@@ -1377,9 +1618,9 @@ h3 {
   gap: 9px;
   min-width: 0;
   padding: 10px;
-  border: 1px solid oklch(84% 0.012 245);
+  border: 1px solid var(--chrome-border);
   border-radius: 7px;
-  background: oklch(99% 0.004 245);
+  background: var(--surface);
 }
 
 /* 所有类型挂载卡片统一中性边框,不再用色相区分前端/后端/其他。 */
@@ -1390,12 +1631,12 @@ h3 {
 }
 
 .nginx-mount-card.missing {
-  border-color: oklch(58% 0.16 25 / 32%);
-  background: oklch(98% 0.018 25);
+  border-color: color-mix(in oklch, var(--danger) 32%, transparent);
+  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
 }
 
 .nginx-mount-card.readonly {
-  background: oklch(98% 0.009 75);
+  background: color-mix(in oklch, var(--warning) 8%, var(--surface));
 }
 
 .nginx-mount-card-head {
@@ -1440,15 +1681,15 @@ h3 {
 }
 
 .nginx-mount-card.editable .nginx-mount-card-head b {
-  color: oklch(35% 0.11 150);
-  border-color: oklch(55% 0.12 150 / 32%);
-  background: oklch(55% 0.12 150 / 10%);
+  color: var(--success-text);
+  border-color: color-mix(in oklch, var(--success) 32%, transparent);
+  background: color-mix(in oklch, var(--success) 10%, transparent);
 }
 
 .nginx-mount-card.missing .nginx-mount-card-head b {
   color: var(--danger);
-  border-color: oklch(58% 0.16 25 / 32%);
-  background: oklch(58% 0.16 25 / 9%);
+  border-color: color-mix(in oklch, var(--danger) 32%, transparent);
+  background: color-mix(in oklch, var(--danger) 9%, transparent);
 }
 
 .nginx-mount-card-paths {
@@ -1519,10 +1760,10 @@ h3 {
   min-height: 112px;
   margin: 0;
   padding: 16px;
-  border: 1px dashed oklch(82% 0.012 245);
+  border: 1px dashed var(--border-strong);
   border-radius: 7px;
   color: var(--text-muted);
-  background: oklch(99% 0.004 245 / 72%);
+  background: color-mix(in oklch, var(--surface) 72%, transparent);
   font-size: 12px;
   font-weight: 700;
   text-align: center;
@@ -1600,12 +1841,12 @@ h3 {
 
 .nginx-file-item:hover,
 .nginx-file-item.selected {
-  border-color: oklch(56% 0.12 185 / 32%);
-  background: oklch(56% 0.12 185 / 8%);
+  border-color: color-mix(in oklch, var(--accent) 32%, transparent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
 }
 
 .nginx-file-item.selected {
-  box-shadow: inset 0 0 0 1px oklch(56% 0.12 185 / 10%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .nginx-file-item span {
@@ -1645,9 +1886,9 @@ h3 {
   align-items: center;
   gap: 18px;
   padding: 14px;
-  border: 1px solid oklch(56% 0.12 185 / 22%);
+  border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
   border-radius: 8px;
-  background: oklch(98.5% 0.01 185);
+  background: color-mix(in oklch, var(--accent) 7%, var(--surface));
 }
 
 .nginx-reader-hero > div:first-child {
@@ -1684,10 +1925,10 @@ h3 {
 .nginx-reader-summary span {
   min-height: 26px;
   padding: 0 8px;
-  border: 1px solid oklch(56% 0.12 185 / 22%);
+  border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
   border-radius: 999px;
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 8%);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
   font-size: 11px;
   font-weight: 800;
   line-height: 24px;
@@ -1794,10 +2035,10 @@ h3 {
   align-items: center;
   min-height: 22px;
   padding: 0 7px;
-  border: 1px solid oklch(57% 0.13 170 / 24%);
+  border: 1px solid color-mix(in oklch, var(--info) 24%, transparent);
   border-radius: 999px;
-  color: oklch(38% 0.11 170);
-  background: oklch(57% 0.13 170 / 10%);
+  color: var(--info-text);
+  background: color-mix(in oklch, var(--info) 10%, transparent);
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
@@ -1810,13 +2051,13 @@ h3 {
   gap: 7px;
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid oklch(72% 0.14 75 / 28%);
+  border: 1px solid color-mix(in oklch, var(--warning) 28%, transparent);
   border-radius: 7px;
-  background: oklch(72% 0.14 75 / 10%);
+  background: color-mix(in oklch, var(--warning) 10%, transparent);
 }
 
 .nginx-return-row strong {
-  color: oklch(43% 0.09 75);
+  color: var(--warning-text);
   font-size: 12px;
 }
 
@@ -1848,13 +2089,13 @@ h3 {
 }
 
 .nginx-route-column.frontend {
-  border-color: oklch(55% 0.12 150 / 22%);
-  background: oklch(98% 0.009 150);
+  border-color: color-mix(in oklch, var(--success) 22%, transparent);
+  background: color-mix(in oklch, var(--success) 8%, var(--surface));
 }
 
 .nginx-route-column.backend {
-  border-color: oklch(56% 0.11 230 / 22%);
-  background: oklch(97.8% 0.008 230);
+  border-color: color-mix(in oklch, var(--accent-blue) 22%, transparent);
+  background: var(--surface-subtle);
 }
 
 .nginx-route-column > header {
@@ -1864,7 +2105,7 @@ h3 {
   gap: 10px;
   min-width: 0;
   padding-bottom: 8px;
-  border-bottom: 1px solid oklch(86% 0.01 245);
+  border-bottom: 1px solid var(--border);
 }
 
 .nginx-route-column > header > div {
@@ -1915,15 +2156,15 @@ h3 {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: 7px;
-  background: oklch(99% 0.004 245);
+  background: var(--surface);
 }
 
 .nginx-route-card.frontend {
-  border-color: oklch(55% 0.12 150 / 24%);
+  border-color: color-mix(in oklch, var(--success) 24%, transparent);
 }
 
 .nginx-route-card.backend {
-  border-color: oklch(56% 0.11 230 / 24%);
+  border-color: color-mix(in oklch, var(--accent-blue) 24%, transparent);
 }
 
 .nginx-route-card-main {
@@ -1999,10 +2240,10 @@ h3 {
   place-items: center;
   min-height: 94px;
   margin: 0;
-  border: 1px dashed oklch(82% 0.012 245);
+  border: 1px dashed var(--border-strong);
   border-radius: 7px;
   color: var(--text-muted);
-  background: oklch(99% 0.004 245 / 62%);
+  background: color-mix(in oklch, var(--surface) 62%, transparent);
   font-size: 12px;
   font-weight: 700;
 }
@@ -2019,10 +2260,10 @@ h3 {
   overflow: hidden;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid oklch(72% 0.14 75 / 28%);
+  border: 1px solid color-mix(in oklch, var(--warning) 28%, transparent);
   border-radius: 999px;
-  color: oklch(43% 0.09 75);
-  background: oklch(72% 0.14 75 / 10%);
+  color: var(--warning-text);
+  background: color-mix(in oklch, var(--warning) 10%, transparent);
   font-size: 11px;
   font-weight: 800;
   line-height: 22px;
@@ -2033,7 +2274,7 @@ h3 {
 .nginx-config-view {
   grid-template-columns: 1fr;
   background:
-    linear-gradient(180deg, oklch(98.7% 0.006 230), oklch(97.4% 0.008 190));
+    linear-gradient(180deg, var(--surface-subtle), var(--surface-subtle));
 }
 
 .nginx-config-main {
@@ -2055,10 +2296,10 @@ h3 {
   gap: 16px;
   min-width: 0;
   padding: 9px 10px;
-  border: 1px solid oklch(84% 0.012 230);
+  border: 1px solid var(--chrome-border);
   border-radius: 8px;
-  background: oklch(99.2% 0.004 230);
-  box-shadow: 0 6px 18px oklch(42% 0.025 230 / 5%);
+  background: var(--surface);
+  box-shadow: 0 6px 18px var(--shadow-color);
 }
 
 .nginx-workbar.no-files {
@@ -2143,7 +2384,7 @@ h3 {
   overflow-x: auto;
   padding: 3px;
   border-radius: 7px;
-  background: oklch(95.8% 0.008 230);
+  background: var(--surface-muted);
 }
 
 .nginx-config-tab {
@@ -2166,12 +2407,12 @@ h3 {
 .nginx-config-tab:hover,
 .nginx-config-tab.selected {
   color: var(--text);
-  border-color: oklch(80% 0.02 210);
+  border-color: var(--border-strong);
   background: var(--surface);
 }
 
 .nginx-config-tab.selected {
-  box-shadow: 0 2px 7px oklch(40% 0.025 230 / 8%);
+  box-shadow: 0 2px 7px var(--shadow-color);
 }
 
 .nginx-config-tab strong,
@@ -2300,9 +2541,9 @@ h3 {
 
 .nginx-service-card:hover {
   transform: translateY(-2px);
-  background: oklch(100% 0 0);
+  background: var(--surface-raised);
   border-color: var(--border);
-  box-shadow: 0 16px 40px oklch(40% 0.03 230 / 8%);
+  box-shadow: 0 16px 40px var(--shadow-color);
 }
 
 .nginx-service-card.paired,
@@ -2316,7 +2557,7 @@ h3 {
 .nginx-service-card.paired:hover,
 .nginx-service-card.frontend:hover,
 .nginx-service-card.backend:hover {
-  background: oklch(100% 0 0);
+  background: var(--surface-raised);
   border-color: var(--border);
 }
 
@@ -2454,7 +2695,7 @@ h3 {
 }
 
 .nginx-service-route-group li.muted strong {
-  color: oklch(58% 0.02 230);
+  color: var(--text-muted);
   font-family: var(--font-sans);
   font-weight: 800;
 }
@@ -2558,7 +2799,7 @@ h3 {
 
 .nginx-empty-state.compact {
   min-height: 140px;
-  background: oklch(99% 0.004 230 / 70%);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
 }
 
 .nginx-detail-overlay {
@@ -2569,7 +2810,7 @@ h3 {
   align-items: center;
   justify-content: center;
   padding: 28px;
-  background: oklch(24% 0.028 230 / 36%);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -2583,8 +2824,8 @@ h3 {
   min-height: 0;
   padding: 22px;
   border-radius: 12px;
-  background: oklch(99.2% 0.004 230);
-  box-shadow: 0 24px 64px oklch(25% 0.035 230 / 26%), 0 2px 8px oklch(25% 0.03 230 / 10%);
+  background: var(--surface);
+  box-shadow: 0 24px 64px var(--shadow-color-strong), 0 2px 8px var(--shadow-color);
   overflow: hidden;
 }
 
@@ -2693,8 +2934,8 @@ h3 {
 
 .nginx-detail-close:hover {
   color: var(--text);
-  border-color: oklch(72% 0.025 230);
-  background: oklch(96.5% 0.006 230);
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
 }
 
 .nginx-detail-columns {
@@ -2718,12 +2959,12 @@ h3 {
 }
 
 .nginx-detail-section.frontend {
-  --rail: oklch(56% 0.12 185);
+  --rail: var(--accent);
   padding-right: 22px;
 }
 
 .nginx-detail-section.backend {
-  --rail: oklch(58% 0.14 285);
+  --rail: var(--accent-alt);
   padding-left: 22px;
   border-left: 1px solid var(--border);
 }
@@ -2927,10 +3168,10 @@ h3 {
   place-items: center;
   min-height: 190px;
   margin: 0;
-  border: 1px dashed oklch(80% 0.018 230);
+  border: 1px dashed var(--border-strong);
   border-radius: 8px;
   color: var(--text-muted);
-  background: oklch(99% 0.004 230 / 62%);
+  background: color-mix(in oklch, var(--surface) 62%, transparent);
   font-size: 13px;
   font-weight: 800;
 }
@@ -2941,7 +3182,7 @@ h3 {
   z-index: 1000;
   display: grid;
   place-items: center;
-  background: oklch(20% 0.01 245 / 55%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -2950,7 +3191,7 @@ h3 {
   grid-template-rows: auto 1fr auto;
   width: 92vw;
   height: 88vh;
-  border: 1px solid oklch(84% 0.012 230);
+  border: 1px solid var(--chrome-border);
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -2963,8 +3204,8 @@ h3 {
   align-items: center;
   gap: 12px;
   padding: 16px 18px;
-  border-bottom: 1px solid oklch(84% 0.012 230);
-  background: oklch(98% 0.008 185);
+  border-bottom: 1px solid var(--chrome-border);
+  background: color-mix(in oklch, var(--accent) 9%, var(--surface));
 }
 
 .nginx-editor-head-left {
@@ -3027,8 +3268,8 @@ h3 {
 
 .nginx-editor-close:hover {
   color: var(--text);
-  border-color: oklch(72% 0.025 230);
-  background: oklch(96.5% 0.006 230);
+  border-color: var(--border-strong);
+  background: var(--surface-muted);
 }
 
 .nginx-editor-body {
@@ -3047,9 +3288,9 @@ h3 {
 .nginx-editor-line-numbers {
   overflow: hidden;
   padding: 16px 0;
-  border-right: 1px solid oklch(88% 0.008 230);
-  background: oklch(96% 0.005 230);
-  color: oklch(62% 0.01 245 / 68%);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-muted);
+  color: color-mix(in oklch, var(--text-muted) 68%, transparent);
   font-family: var(--font-mono);
   font-size: 13px;
   font-variant-ligatures: none;
@@ -3102,15 +3343,15 @@ h3 {
 }
 
 .nginx-editor-toast.success {
-  background: oklch(97.5% 0.018 150);
+  background: color-mix(in oklch, var(--success) 14%, var(--surface));
 }
 
 .nginx-editor-toast.error {
-  background: oklch(97.5% 0.018 25);
+  background: color-mix(in oklch, var(--danger) 12%, var(--surface));
 }
 
 .nginx-editor-toast.warning {
-  background: oklch(97.5% 0.018 75);
+  background: color-mix(in oklch, var(--warning) 12%, var(--surface));
 }
 
 .nginx-editor-toast-content {
@@ -3164,7 +3405,7 @@ h3 {
   z-index: 1000;
   display: grid;
   place-items: center;
-  background: oklch(20% 0.01 245 / 55%);
+  background: var(--scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -3173,7 +3414,7 @@ h3 {
   grid-template-rows: auto minmax(0, 1fr);
   width: min(1120px, 94vw);
   max-height: 84vh;
-  border: 1px solid oklch(84% 0.012 230);
+  border: 1px solid var(--chrome-border);
   border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
@@ -3218,7 +3459,7 @@ h3 {
 
 .nginx-diff-body {
   padding: 16px 18px;
-  background: oklch(97% 0.004 230);
+  background: var(--surface-subtle);
   overflow-y: auto;
 }
 
@@ -3237,10 +3478,10 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  border: 1px solid oklch(84% 0.012 230);
+  border: 1px solid var(--chrome-border);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
-  background: oklch(96% 0.006 230);
+  background: var(--surface-muted);
 }
 
 .nginx-diff-preview-head strong {
@@ -3255,7 +3496,7 @@ h3 {
 }
 
 .nginx-diff-preview-code {
-  border: 1px solid oklch(84% 0.012 230);
+  border: 1px solid var(--chrome-border);
   border-radius: 0 0 8px 8px;
   overflow-x: auto;
   background: var(--surface-subtle);
@@ -3285,12 +3526,12 @@ h3 {
 
 .nginx-diff-preview-gutter {
   padding: 2px 10px;
-  color: oklch(62% 0.01 245 / 64%);
+  color: color-mix(in oklch, var(--text-muted) 64%, transparent);
   text-align: right;
   user-select: none;
   -webkit-user-select: none;
-  background: oklch(96% 0.005 230);
-  border-right: 1px solid oklch(89% 0.008 230);
+  background: var(--surface-muted);
+  border-right: 1px solid var(--border-subtle);
 }
 
 .nginx-diff-preview-type {
@@ -3299,8 +3540,8 @@ h3 {
   justify-content: center;
   padding: 2px 6px;
   color: var(--text-muted);
-  background: oklch(97% 0.004 230);
-  border-right: 1px solid oklch(90% 0.008 230);
+  background: var(--surface-subtle);
+  border-right: 1px solid var(--border-subtle);
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 800;
@@ -3318,37 +3559,37 @@ h3 {
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-line {
-  background: oklch(70% 0.12 75 / 8%);
+  background: color-mix(in oklch, var(--warning) 8%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-line {
-  background: oklch(55% 0.13 150 / 8%);
+  background: color-mix(in oklch, var(--success) 8%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-line {
-  background: oklch(58% 0.16 25 / 8%);
+  background: color-mix(in oklch, var(--danger) 8%, transparent);
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-type {
-  color: oklch(48% 0.13 75);
-  background: oklch(70% 0.12 75 / 16%);
+  color: var(--warning-text);
+  background: color-mix(in oklch, var(--warning) 16%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-type {
-  color: oklch(42% 0.12 150);
-  background: oklch(55% 0.13 150 / 14%);
+  color: var(--success-text);
+  background: color-mix(in oklch, var(--success) 14%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-type {
-  color: oklch(48% 0.16 25);
-  background: oklch(58% 0.16 25 / 14%);
+  color: var(--danger-text);
+  background: color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 .nginx-diff-original-note {
   align-items: start;
-  border-bottom: 1px dashed oklch(80% 0.07 25);
-  background: oklch(58% 0.16 25 / 7%);
-  color: oklch(48% 0.16 25);
+  border-bottom: 1px dashed var(--danger-border);
+  background: color-mix(in oklch, var(--danger) 7%, transparent);
+  color: var(--danger-text);
 }
 
 .nginx-diff-original-note span {
@@ -3366,19 +3607,19 @@ h3 {
 }
 
 .nginx-diff-original-note .changed {
-  background: oklch(58% 0.16 25 / 18%);
+  background: color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-line .changed {
-  background: oklch(70% 0.12 75 / 22%);
+  background: color-mix(in oklch, var(--warning) 22%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-line .changed {
-  background: oklch(55% 0.13 150 / 20%);
+  background: color-mix(in oklch, var(--success) 20%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-line .changed {
-  background: oklch(58% 0.16 25 / 18%);
+  background: color-mix(in oklch, var(--danger) 18%, transparent);
 }
 
 .nginx-diff-stat {
@@ -3387,24 +3628,187 @@ h3 {
 }
 
 .nginx-diff-stat.change {
-  color: oklch(55% 0.13 75);
+  color: var(--warning-text);
 }
 
 .nginx-diff-stat.add {
-  color: oklch(52% 0.15 150);
+  color: var(--success-text);
 }
 
 .nginx-diff-stat.remove {
   margin-left: 4px;
-  color: oklch(58% 0.18 25);
+  color: var(--danger-text);
 }
 
-.settings-view {
+/* 设置模态框 */
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
   display: grid;
-  gap: 22px;
-  align-content: start;
-  max-width: 860px;
-  height: 100%;
+  place-items: center;
+  padding: 28px;
+  background: var(--scrim);
+  backdrop-filter: blur(4px);
+}
+
+.settings-modal {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 30px 70px var(--shadow-color-strong);
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-modal-header h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.settings-modal-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-modal-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface);
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.settings-modal-close:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+}
+
+.settings-modal-body {
+  padding: 2px 22px 14px;
+  overflow: auto;
+}
+
+/* 模态框内的分组间距与行高，比整页版本更紧凑 */
+.settings-modal-body .settings-group + .settings-group {
+  margin-top: 18px;
+}
+
+.settings-modal-body .settings-group-head {
+  min-height: 50px;
+}
+
+.settings-modal-body .settings-row {
+  min-height: 60px;
+}
+
+.settings-path-row .settings-row-copy {
+  min-width: 0;
+}
+
+.settings-path {
+  overflow: hidden;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-value {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-value.mono {
+  font-family: var(--font-mono);
+}
+
+.settings-value.ok {
+  color: var(--success);
+}
+
+.settings-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-footer-hint {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.settings-modal-footer .settings-message {
+  margin: 0;
+}
+
+.settings-modal-enter-active,
+.settings-modal-leave-active {
+  transition: opacity 180ms ease;
+}
+
+.settings-modal-enter-active .settings-modal,
+.settings-modal-leave-active .settings-modal {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 180ms ease;
+}
+
+.settings-modal-enter-from,
+.settings-modal-leave-to {
+  opacity: 0;
+}
+
+.settings-modal-enter-from .settings-modal,
+.settings-modal-leave-to .settings-modal {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal-enter-active,
+  .settings-modal-leave-active,
+  .settings-modal-enter-active .settings-modal,
+  .settings-modal-leave-active .settings-modal {
+    transition: none;
+  }
+
+  .settings-modal-enter-from .settings-modal,
+  .settings-modal-leave-to .settings-modal {
+    transform: none;
+  }
 }
 
 .settings-group {
@@ -3468,7 +3872,7 @@ h3 {
 
 .settings-input-unit:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .settings-input-unit input {
@@ -3487,6 +3891,48 @@ h3 {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+}
+
+/* 主题分段控件：浅/深二选一，选中项用 accent 描边 + 淡底表达状态。 */
+.theme-segment {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.theme-segment-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.theme-segment-item:hover {
+  color: var(--text);
+}
+
+.theme-segment-item.active {
+  color: var(--accent-strong);
+  border-color: color-mix(in oklch, var(--accent) 38%, transparent);
+  background: var(--surface-raised);
+}
+
+.theme-segment-item svg {
+  flex: 0 0 auto;
 }
 
 .settings-actions {
@@ -3579,13 +4025,13 @@ input {
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
-  background: oklch(99% 0.003 245);
+  background: var(--surface);
   outline: none;
 }
 
 input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .file-input-row {
@@ -3632,7 +4078,7 @@ input:focus {
   padding: 0 14px;
   border: 0;
   border-radius: 7px;
-  color: oklch(99% 0.004 245);
+  color: var(--text-on-fill);
   background: var(--accent);
   font-size: 13px;
   font-weight: 700;
@@ -3654,24 +4100,24 @@ input:focus {
 }
 
 .secondary-button:hover {
-  border-color: oklch(78% 0.012 245);
+  border-color: var(--border-strong);
   background: var(--surface);
 }
 
 .danger-button {
   height: 36px;
   padding: 0 12px;
-  border: 1px solid oklch(80% 0.07 24);
+  border: 1px solid var(--danger-border);
   border-radius: 7px;
-  color: oklch(45% 0.14 24);
-  background: oklch(98% 0.018 24);
+  color: var(--danger-text);
+  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
   font-size: 13px;
   font-weight: 700;
 }
 
 .danger-button:hover {
-  border-color: oklch(68% 0.13 24);
-  background: oklch(96% 0.035 24);
+  border-color: var(--danger-border);
+  background: color-mix(in oklch, var(--danger) 20%, var(--surface));
 }
 
 .compact-button {
@@ -3701,7 +4147,7 @@ input:focus {
   width: calc((100% - 6px) / 2);
   border-radius: 6px;
   background: var(--surface);
-  box-shadow: 0 1px 2px oklch(30% 0.02 245 / 14%);
+  box-shadow: 0 1px 2px var(--shadow-color);
   transform: translateX(0);
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -3740,116 +4186,339 @@ input:focus {
   min-height: 0;
 }
 
-.command-panel {
+.command-view {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+/* 交互式终端：整片浅色 surface 撑满内容区，无卡片边框与阴影 */
+.ssh-terminal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 14px;
   height: 100%;
-  padding: 18px;
   min-height: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--terminal-stage);
 }
 
-.command-body {
+.terminal-topbar {
+  position: relative;
+  z-index: 5;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 0;
-}
-
-.command-quickbar {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface-muted);
-}
-
-.command-quickbar-title {
-  flex: 0 0 auto;
-  padding-top: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.command-quickbar-actions {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 0;
-}
-
-.quick-command-button {
-  display: inline-flex;
   align-items: center;
-  gap: 7px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.terminal-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid oklch(84% 0.009 245);
-  border-radius: 7px;
-  color: var(--text);
-  background: var(--surface);
-  font-size: 12px;
-  font-weight: 700;
-  white-space: nowrap;
-  transition:
-    border-color 140ms ease,
-    background 140ms ease,
-    transform 140ms ease;
 }
 
-.quick-command-button:hover:not(:disabled) {
-  border-color: oklch(76% 0.012 245);
-  background: oklch(97% 0.006 245);
-  transform: translateY(-1px);
+.terminal-status-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-soft);
 }
 
-.quick-command-button code {
+.terminal-status-dot.ok {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
+}
+
+.terminal-status-dot.pending {
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--warning) 18%, transparent);
+}
+
+.terminal-status-dot.danger {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+}
+
+.terminal-status-dot.idle {
+  background: var(--text-soft);
+}
+
+.terminal-target {
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-muted);
   font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.terminal-target.muted {
+  color: var(--text-soft);
+  font-family: var(--font-sans);
+}
+
+/* 帮助气泡：悬停 ? 查看常用命令与快捷键 */
+.terminal-help {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.terminal-help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--surface);
   font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.terminal-help-trigger:hover,
+.terminal-help:focus-within .terminal-help-trigger {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.terminal-help-popover {
+  position: absolute;
+  top: calc(100% + 9px);
+  left: -4px;
+  z-index: 30;
+  width: 300px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 14px 34px var(--shadow-color);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease,
+    visibility 150ms ease;
+}
+
+/* 透明桥，避免从 ? 移到气泡时因间隙丢失 hover */
+.terminal-help-popover::before {
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: 0;
+  right: 0;
+  height: 9px;
+}
+
+.terminal-help:hover .terminal-help-popover,
+.terminal-help:focus-within .terminal-help-popover {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.help-section + .help-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.help-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.help-section-title span {
+  color: var(--text-soft);
+  font-size: 10px;
   font-weight: 600;
 }
 
-.command-view {
-  display: grid;
-  height: 100%;
-  min-height: 0;
+.help-cmd {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  transition: background 130ms ease;
 }
 
-.command-textarea {
-  width: 100%;
-  flex: 1;
-  min-height: 280px;
-  padding: 12px;
+.help-cmd:hover {
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+}
+
+.help-cmd code {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.help-cmd span {
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.help-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+}
+
+.help-shortcut kbd {
+  flex: 0 0 auto;
+  min-width: 62px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.help-shortcut span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-help-popover,
+  .terminal-help:hover .terminal-help-popover,
+  .terminal-help:focus-within .terminal-help-popover {
+    transition: none;
+    transform: none;
+  }
+}
+
+.terminal-tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-state-text {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.terminal-tool-button {
+  height: 28px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
   background: var(--surface);
-  outline: none;
-  resize: vertical;
-  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.terminal-tool-button:hover {
+  border-color: var(--accent);
+  background: color-mix(in oklch, var(--accent) 7%, transparent);
+}
+
+.terminal-stage {
+  position: relative;
+  min-height: 0;
+  padding: 10px 12px;
+  background: var(--terminal-stage);
+}
+
+.terminal-host {
+  width: 100%;
+  height: 100%;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar {
+  width: 10px;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 8px;
+  background: var(--border-strong);
+  background-clip: border-box;
+}
+
+.terminal-host .xterm-viewport::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.terminal-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: var(--terminal-stage);
+  text-align: center;
+}
+
+.terminal-overlay-text {
+  margin: 0;
+  max-width: 420px;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.command-textarea:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+.terminal-overlay-button {
+  height: 34px;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--text-on-fill);
+  background: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  transition: background 140ms ease;
 }
 
-.command-textarea:disabled {
-  background: var(--surface-muted);
-}
-
-.command-actions {
-  display: flex;
-  gap: 8px;
+.terminal-overlay-button:hover {
+  background: var(--accent-strong);
 }
 
 .command-meta {
@@ -3871,29 +4540,15 @@ input:focus {
   font-weight: 600;
 }
 
-.command-hint,
-.command-message {
+.command-hint {
   margin: 0;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
 }
 
-.command-hint {
-  color: var(--text-muted);
-}
-
-.command-message {
-  color: var(--danger);
-  font-weight: 700;
-}
-
-.result-message.warning,
-.command-message.warning {
-  color: oklch(57% 0.11 75);
-}
-
-.command-message.ok {
-  color: var(--success);
+.result-message.warning {
+  color: var(--warning-text);
 }
 
 .placeholder-panel {
@@ -3912,19 +4567,26 @@ input:focus {
   line-height: 1.7;
 }
 
-.history-panel {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 12px;
+/* 部署记录：不套外层大卡片，记录直接坐在内容画布上；每条是独立卡片，靠间距分隔，横线归零。 */
+.history-view {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  padding: 18px;
+  min-height: 0;
   overflow: hidden;
 }
 
-.history-toolbar {
+.history-head {
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex: 0 0 auto;
+  padding: 2px 2px 16px;
+}
+
+.history-head-copy .eyebrow {
+  margin-bottom: 6px;
 }
 
 .history-switch {
@@ -3932,9 +4594,8 @@ input:focus {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg);
+  border-radius: 10px;
+  background: var(--surface-muted);
 }
 
 .history-switch-button {
@@ -3942,24 +4603,38 @@ input:focus {
   align-items: center;
   gap: 8px;
   height: 32px;
-  padding: 0 12px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   color: var(--text-muted);
   background: transparent;
   font-size: 12px;
   font-weight: 700;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.history-switch-button:hover {
+  color: var(--text);
 }
 
 .history-switch-button.active {
   color: var(--text);
   background: var(--surface);
-  box-shadow: 0 1px 2px oklch(30% 0.02 245 / 12%);
+  box-shadow: 0 1px 2px var(--shadow-color);
 }
 
 .history-switch-count {
   color: inherit;
-  opacity: 0.72;
+  opacity: 0.6;
+}
+
+.history-foot {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 14px 4px 2px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .package-panel {
@@ -4081,10 +4756,10 @@ input:focus {
   display: grid;
   gap: 10px;
   padding: 13px;
-  border: 1px solid oklch(56% 0.12 185 / 34%);
+  border: 1px solid color-mix(in oklch, var(--accent) 34%, transparent);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: inset 0 0 0 1px oklch(56% 0.12 185 / 5%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 5%, transparent);
   will-change: transform, opacity;
 }
 
@@ -4107,10 +4782,10 @@ input:focus {
   flex: 0 0 auto;
   height: 24px;
   padding: 0 9px;
-  border: 1px solid oklch(56% 0.12 185 / 34%);
+  border: 1px solid color-mix(in oklch, var(--accent) 34%, transparent);
   border-radius: 999px;
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 10%);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
   font-size: 12px;
   font-weight: 700;
 }
@@ -4134,7 +4809,7 @@ input:focus {
 
 .deploy-summary-main small {
   overflow: hidden;
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 12px;
   line-height: 1.5;
   text-overflow: ellipsis;
@@ -4245,7 +4920,7 @@ input:focus {
 }
 
 .field-prompt {
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -4295,31 +4970,31 @@ input:focus {
 }
 
 .deploy-history-trigger[aria-expanded='true'] {
-  border-color: oklch(56% 0.12 185 / 36%);
-  background: oklch(56% 0.12 185 / 6%);
+  border-color: color-mix(in oklch, var(--accent) 36%, transparent);
+  background: color-mix(in oklch, var(--accent) 6%, transparent);
 }
 
 .deploy-history-trigger .deploy-history-side b {
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 10%);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .deploy-history-picks.expanded .deploy-count-pill {
   color: var(--accent-strong);
-  border-color: oklch(56% 0.12 185 / 30%);
-  background: oklch(56% 0.12 185 / 8%);
+  border-color: color-mix(in oklch, var(--accent) 30%, transparent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
 }
 
 .deploy-history-trigger:hover,
 .deploy-history-item:hover,
 .deploy-history-item.active {
-  border-color: oklch(56% 0.12 185 / 42%);
-  background: oklch(56% 0.12 185 / 5%);
+  border-color: color-mix(in oklch, var(--accent) 42%, transparent);
+  background: color-mix(in oklch, var(--accent) 5%, transparent);
 }
 
 .deploy-history-trigger.active,
 .deploy-history-item.active {
-  box-shadow: inset 0 0 0 1px oklch(56% 0.12 185 / 10%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .deploy-history-trigger:active,
@@ -4352,7 +5027,7 @@ input:focus {
 .deploy-history-trigger small,
 .deploy-history-item small {
   overflow: hidden;
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 12px;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -4373,7 +5048,7 @@ input:focus {
 
 .deploy-history-item.active .deploy-history-side b {
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 12%);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
 }
 
 .advanced-toggle {
@@ -4399,7 +5074,7 @@ input:focus {
 
 .advanced-toggle:hover b {
   color: var(--text);
-  border-color: oklch(78% 0.012 245);
+  border-color: var(--border-strong);
   background: var(--surface);
 }
 
@@ -4439,7 +5114,7 @@ input:focus {
   margin-top: 6px;
   border-radius: 999px;
   background: var(--text-soft);
-  box-shadow: 0 0 0 3px oklch(67% 0.01 245 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--text-soft) 14%, transparent);
 }
 
 .deploy-action-status.active > span {
@@ -4449,12 +5124,12 @@ input:focus {
 
 .deploy-action-status.ok > span {
   background: var(--success);
-  box-shadow: 0 0 0 3px oklch(55% 0.13 150 / 16%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
 }
 
 .deploy-action-status.failed > span {
   background: var(--danger);
-  box-shadow: 0 0 0 3px oklch(58% 0.16 25 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 .deploy-action-status .command-hint {
@@ -4475,12 +5150,12 @@ input:focus {
   0%,
   100% {
     transform: scale(1);
-    box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
   }
 
   50% {
     transform: scale(1.18);
-    box-shadow: 0 0 0 5px oklch(56% 0.12 185 / 8%);
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 8%, transparent);
   }
 }
 
@@ -4532,8 +5207,8 @@ input:focus {
 .version-chip:hover,
 .version-chip.selected {
   color: var(--text);
-  border-color: oklch(56% 0.12 185 / 40%);
-  background: oklch(56% 0.12 185 / 8%);
+  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
 }
 
 .version-input {
@@ -4578,7 +5253,7 @@ input:focus {
   display: grid;
   place-items: center;
   padding: 28px;
-  background: oklch(8% 0.01 245 / 58%);
+  background: var(--scrim-strong);
 }
 
 .dockerfile-modal-card {
@@ -4590,7 +5265,7 @@ input:focus {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 24px 60px oklch(5% 0.01 245 / 34%);
+  box-shadow: 0 24px 60px var(--scrim-strong);
 }
 
 .dockerfile-modal-header,
@@ -4648,7 +5323,7 @@ input:focus {
 
 .dockerfile-import-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .dockerfile-import-summary {
@@ -4696,7 +5371,7 @@ input:focus {
 }
 
 .deploy-form-panel .field span {
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 12px;
   font-weight: 600;
 }
@@ -4720,20 +5395,20 @@ input:focus {
 }
 
 .deploy-form-panel .command-hint {
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .deploy-form-panel .template-description {
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 12px;
   line-height: 1.5;
 }
 
 .deploy-form-panel input,
 .deploy-form-panel .select-input {
-  background-color: oklch(99% 0.003 245);
+  background-color: var(--surface);
 }
 
 .deploy-form-panel input[readonly] {
@@ -4766,7 +5441,7 @@ select,
 
 select,
 .select-input {
-  --select-arrow: oklch(46% 0.014 245);
+  --select-arrow: var(--text-mid);
 
   min-width: 0;
   height: 36px;
@@ -4790,15 +5465,15 @@ select,
 
 select:hover:not(:disabled),
 .select-input:hover:not(:disabled) {
-  --select-arrow: oklch(35% 0.018 245);
+  --select-arrow: var(--text);
 
-  border-color: oklch(72% 0.02 245);
-  background-color: oklch(99% 0.004 245);
+  border-color: var(--text-soft);
+  background-color: var(--surface);
 }
 
 select:disabled,
 .select-input:disabled {
-  --select-arrow: oklch(68% 0.01 245);
+  --select-arrow: var(--text-soft);
 
   cursor: not-allowed;
   color: var(--text-muted);
@@ -4861,10 +5536,10 @@ select option,
   overflow-x: hidden;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid oklch(82% 0.012 245);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  background: oklch(99.2% 0.004 245);
-  box-shadow: 0 16px 42px oklch(20% 0.02 245 / 18%);
+  background: var(--surface);
+  box-shadow: 0 16px 42px var(--shadow-color-strong);
 }
 
 .app-select-group {
@@ -4897,16 +5572,16 @@ select option,
 }
 
 .app-select-option.active {
-  background: oklch(56% 0.12 185 / 10%);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
 }
 
 .app-select-option.selected {
   color: var(--accent-strong);
-  background: oklch(56% 0.12 185 / 14%);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .app-select-option.selected.active {
-  background: oklch(56% 0.12 185 / 18%);
+  background: color-mix(in oklch, var(--accent) 18%, transparent);
 }
 
 .app-select-option.disabled {
@@ -4929,7 +5604,7 @@ select:focus,
   --select-arrow: var(--accent);
 
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(56% 0.12 185 / 14%);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .deploy-meta-grid dd {
@@ -4937,7 +5612,7 @@ select:focus,
 }
 
 .deploy-meta-grid dt {
-  color: oklch(45% 0.012 245);
+  color: var(--text-mid);
   font-size: 12px;
 }
 
@@ -5026,15 +5701,15 @@ select:focus,
   gap: 14px;
   width: min(620px, calc(100vw - 56px));
   padding: 13px 14px;
-  border: 1px solid oklch(55% 0.13 150 / 34%);
+  border: 1px solid color-mix(in oklch, var(--success) 34%, transparent);
   border-radius: 8px;
-  background: oklch(98.5% 0.012 150);
-  box-shadow: 0 18px 50px oklch(12% 0.02 245 / 18%);
+  background: color-mix(in oklch, var(--success) 8%, var(--surface));
+  box-shadow: 0 18px 50px var(--scrim-strong);
 }
 
 .package-toast.failed {
-  border-color: oklch(58% 0.16 25 / 34%);
-  background: oklch(98% 0.018 25);
+  border-color: color-mix(in oklch, var(--danger) 34%, transparent);
+  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
 }
 
 .package-toast-main {
@@ -5050,12 +5725,12 @@ select:focus,
   margin-top: 5px;
   border-radius: 999px;
   background: var(--success);
-  box-shadow: 0 0 0 4px oklch(55% 0.13 150 / 14%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--success) 14%, transparent);
 }
 
 .package-toast.failed .package-toast-dot {
   background: var(--danger);
-  box-shadow: 0 0 0 4px oklch(58% 0.16 25 / 14%);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 .package-toast-copy {
@@ -5140,7 +5815,7 @@ select:focus,
 
 .toast-close-button:hover {
   color: var(--text);
-  border-color: oklch(78% 0.012 245);
+  border-color: var(--border-strong);
 }
 
 .package-toast-enter-active,
@@ -5161,6 +5836,9 @@ select:focus,
   place-items: center;
   align-content: center;
   gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 24px;
   color: var(--text-muted);
   text-align: center;
 }
@@ -5170,124 +5848,341 @@ select:focus,
 }
 
 .history-list {
-  display: grid;
-  align-content: start;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  padding: 2px 2px 4px;
   overflow: auto;
   min-height: 0;
 }
 
-.history-row {
-  display: block;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-}
-
-.history-row-main {
+/* 正方形卡片流：固定方格宽高，一行放满自动换行；开卡就地放大占 2×2。 */
+.history-grid {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, 232px);
+  grid-auto-rows: 232px;
+  grid-auto-flow: row;
+  justify-content: start;
+  gap: 14px;
+  flex: 1 1 auto;
+  padding: 2px 2px 6px;
+  overflow: auto;
+  min-height: 0;
+  align-content: start;
+}
+
+/* 单张方卡：单层柔边框，靠方格间距分隔，不叠横线。 */
+.history-card {
+  position: relative;
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Flip 接管布局补间时，交出 transform/shadow 的 CSS 过渡，避免两套动画抢同一属性。 */
+.history-grid.is-flipping .history-card {
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+/* 补间中的展开卡放到最上层，放大时压过邻卡而非被裁切。 */
+.history-grid.is-flipping .history-card.open {
+  z-index: 2;
+}
+
+.history-card:hover {
+  border-color: var(--chrome-border);
+  background: var(--surface-subtle);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px var(--shadow-color);
+}
+
+.history-card:focus-within {
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+}
+
+/* 展开：占据 2×2 方格，就地放大成一整块详情面板。 */
+.history-card.open {
+  grid-column: span 2;
+  grid-row: span 2;
+  border-color: color-mix(in oklch, var(--accent) 38%, transparent);
+  background: var(--surface);
+  box-shadow: 0 12px 34px var(--shadow-color);
+  transform: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 卡面：整卡可点，主体是标题+摘要（领衔置顶），状态/时间沉到页脚。 */
+.history-card-face {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   width: 100%;
+  height: 100%;
+  padding: 18px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-card.open .history-card-face {
+  height: auto;
+  flex: 0 0 auto;
+  gap: 14px;
+  padding-bottom: 14px;
+}
+
+.history-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.history-row-copy {
-  min-width: 0;
+.history-card.open .history-card-body {
+  flex: 0 0 auto;
 }
 
-.history-row-actions {
+.history-card-title {
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.history-card.open .history-card-title {
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.history-card-summary {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.history-card.open .history-card-summary {
+  display: none;
+}
+
+/* 页脚：状态在左、时间在右，钉在卡片底边，与顶部标题拉开层次。 */
+.history-card-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
   flex: 0 0 auto;
 }
 
-.history-row strong,
-.history-row small {
-  display: block;
-}
-
-.history-row strong {
-  max-width: 78ch;
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  text-overflow: ellipsis;
+.history-time {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.history-row small {
-  margin-top: 5px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.history-detail-list {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.history-detail-chip {
+.history-status {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  gap: 7px;
   color: var(--text-muted);
-  background: var(--surface);
-  font-size: 11px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-detail-chip.wide {
-  grid-column: 1 / -1;
-}
-
-.history-detail-chip.command {
-  border-radius: 6px;
-  background: oklch(94.5% 0.007 245);
-  font-family: var(--font-mono);
-}
-
-.history-detail-label {
-  flex: 0 0 auto;
-  color: var(--text-muted);
-}
-
-.history-detail-value {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-delete-button {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid oklch(58% 0.16 25 / 25%);
-  border-radius: 999px;
-  color: var(--danger);
-  background: oklch(58% 0.16 25 / 7%);
   font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--text-soft);
+}
+
+.status-dot.success {
+  background: var(--success);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
+}
+
+.status-dot.failed {
+  background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+}
+
+/* 删除：默认隐形，悬停/开卡时浮现于右上角，保留一键删除且留在 tab 顺序内。 */
+.history-delete {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--text-soft);
+  background: var(--surface-muted);
+  opacity: 0;
+  transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease;
+}
+
+.history-card:hover .history-delete,
+.history-card.open .history-delete,
+.history-delete:focus-visible,
+.history-delete:disabled {
+  opacity: 1;
+}
+
+.history-delete:hover {
+  color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+}
+
+.history-delete:disabled {
+  color: var(--text-soft);
+  cursor: progress;
+}
+
+/* 展开详情：放大卡片下半部，内部滚动，不叠任何横线。 */
+.history-drawer {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 18px 18px;
+  cursor: default;
+}
+
+.history-error {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 14px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 错误只用一个短标签承载语义色，正文保持常规文本色（色彩不铺满正文）。 */
+.history-error-tag {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  font-size: 11px;
   font-weight: 700;
 }
 
-.history-delete-button:hover {
-  border-color: oklch(58% 0.16 25 / 40%);
-  background: oklch(58% 0.16 25 / 12%);
+.history-error-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.history-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(56px, max-content) minmax(0, 1fr);
+  gap: 12px 16px;
+  margin: 0;
+  align-items: baseline;
+}
+
+.history-detail-grid dt {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.history-detail-grid dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.history-detail-text {
+  display: block;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.history-detail-grid dd.command {
+  display: grid;
+  gap: 8px;
+}
+
+/* 命令槽：无边框浅底填充（field，而非嵌套卡片）；随内容换行，滚动交给抽屉，避免卡内双滚动条。 */
+.history-command {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.history-command code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.history-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 11px;
+  font-weight: 600;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.history-copy:hover {
+  color: var(--accent-strong);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-card,
+  .history-delete,
+  .history-copy,
+  .history-switch-button {
+    transition: none;
+  }
+
+  .history-card:hover {
+    transform: none;
+  }
 }
 
 .status-empty {
@@ -5320,15 +6215,15 @@ select:focus,
   gap: 14px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: oklch(96.8% 0.022 150);
+  background: color-mix(in oklch, var(--success) 18%, var(--surface));
 }
 
 .status-banner.failed {
-  background: oklch(97% 0.024 25);
+  background: color-mix(in oklch, var(--danger) 14%, var(--surface));
 }
 
 .status-banner.warning {
-  background: oklch(97.4% 0.03 75);
+  background: color-mix(in oklch, var(--warning) 16%, var(--surface));
 }
 
 .status-banner-icon {
@@ -5344,7 +6239,7 @@ select:focus,
 }
 
 .status-banner.warning .status-banner-icon {
-  color: oklch(57% 0.11 75);
+  color: var(--warning-text);
 }
 
 .status-banner-text {
@@ -5612,7 +6507,7 @@ select:focus,
   padding: 0 14px;
   border-bottom: 1px solid var(--terminal-border);
   align-items: center;
-  color: oklch(70% 0.015 245);
+  color: var(--text-soft);
   font-size: 12px;
   font-weight: 700;
 }
@@ -5636,8 +6531,8 @@ select:focus,
 }
 
 .terminal-action:hover {
-  border-color: oklch(58% 0.02 245);
-  background: oklch(84% 0.015 245 / 6%);
+  border-color: var(--text-muted);
+  background: color-mix(in oklch, var(--terminal-text) 6%, transparent);
 }
 
 .terminal-panel pre {
@@ -5671,7 +6566,7 @@ select:focus,
   display: grid;
   place-items: center;
   padding: 28px;
-  background: oklch(8% 0.01 245 / 68%);
+  background: var(--scrim-strong);
   backdrop-filter: blur(4px);
 }
 
@@ -5684,7 +6579,7 @@ select:focus,
   border: 1px solid var(--terminal-border);
   border-radius: 14px;
   background: var(--terminal);
-  box-shadow: 0 24px 60px oklch(5% 0.01 245 / 45%);
+  box-shadow: 0 24px 60px var(--scrim-strong);
   color: var(--terminal-text);
 }
 
@@ -5695,7 +6590,7 @@ select:focus,
   gap: 16px;
   padding: 0 18px;
   border-bottom: 1px solid var(--terminal-border);
-  color: oklch(76% 0.015 245);
+  color: var(--border-strong);
   font-size: 13px;
 }
 

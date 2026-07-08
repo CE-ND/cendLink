@@ -1,3 +1,4 @@
+import electron from 'electron'
 import { getDatabaseStorageInfo } from '../services/database/index.js'
 import {
   deleteServer,
@@ -34,14 +35,33 @@ import {
 import { getSetting, setSetting } from '../services/database/repositories/settingsRepository.js'
 import { decryptPassword, encryptPassword } from '../services/credential/passwordVault.js'
 
+const { app, shell } = electron
+
 /**
  * 注册本地数据存储 IPC 通道。
  * 这里统一把数据库模型转换成渲染进程能安全使用的数据结构。
  */
 export function registerStorageHandlers(ipcMain) {
-  // 返回 ~/.cendLink 下的数据库、日志、临时目录路径。
+  // 返回 ~/.cendLink 下的数据库、日志、临时目录路径，附带应用版本。
   ipcMain.handle('data:get-storage-info', async () => {
-    return getDatabaseStorageInfo()
+    const info = await getDatabaseStorageInfo()
+
+    return {
+      ...info,
+      appVersion: app.getVersion(),
+    }
+  })
+
+  // 在系统文件管理器中打开本地数据目录。
+  ipcMain.handle('data:open-storage-dir', async () => {
+    const info = await getDatabaseStorageInfo()
+    const openError = await shell.openPath(info.dataDir)
+
+    return {
+      ok: !openError,
+      message: openError || '',
+      openedPath: info.dataDir,
+    }
   })
 
   // 读取服务器列表，返回前会移除加密密文字段。

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { buildBaseImage, parseDockerfileText } from '../../../shared/dockerfileTemplates.js'
+import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 
 // 本地镜像包生成页，负责展示 Jar -> Docker 镜像压缩包的完整流程。
 const {
@@ -48,6 +49,9 @@ const dockerfileTemplateName = ref('')
 const dockerfileTemplateDescription = ref('')
 const isPackageToastVisible = ref(false)
 let packageToastTimer = null
+
+const pageRef = ref(null)
+usePageEntrance(pageRef)
 
 const builtinTemplateOptions = computed(() => {
   return dockerfileTemplateOptions.value.filter((template) => template.sourceType === 'builtin')
@@ -353,7 +357,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="package-view">
+  <div ref="pageRef" class="package-view">
     <section class="panel package-panel package-form-panel">
       <div class="panel-header">
         <div>
