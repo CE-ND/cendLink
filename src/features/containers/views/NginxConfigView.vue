@@ -2,11 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { gsap } from 'gsap'
-import { FolderTree, Cable, ArrowRight, CornerDownRight } from '@lucide/vue'
+import { FolderTree, Cable, ArrowRight, CornerDownRight, X } from '@lucide/vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { parseNginxConfig } from '../utils/nginxConfigParser.js'
 import { diffConfigs } from '../utils/nginxConfigEditor.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
+import { useFocusTrap } from '../../../composables/useFocusTrap.js'
 
 const MAX_PATH_TYPE_CHECKS = 32
 const MAX_CONFIG_FILES = 16
@@ -88,6 +89,12 @@ const showDiffPreview = ref(false)
 const diffResult = ref(null)
 const editorTextareaRef = ref(null)
 const editorLineNumberRef = ref(null)
+const editorModalRef = ref(null)
+
+// 编辑器弹层焦点管理：打开移焦到文本域、Tab 在弹层内循环、关闭归还焦点。
+useFocusTrap(isEditing, () => editorModalRef.value, {
+  initialFocus: () => editorTextareaRef.value,
+})
 
 const routeContainerId = computed(() => String(route.params.containerId || '').trim())
 
@@ -1397,7 +1404,22 @@ function closeServiceDetail() {
 }
 
 function handleDetailKeydown(event) {
-  if (event.key === 'Escape' && detailServiceId.value) {
+  if (event.key !== 'Escape') {
+    return
+  }
+
+  // 分层撤销：差异预览 → 编辑器 → 服务详情，与叠放顺序一致，四个弹层共享一套关闭契约。
+  if (showDiffPreview.value) {
+    closeDiffPreview()
+    return
+  }
+
+  if (isEditing.value) {
+    cancelEditing()
+    return
+  }
+
+  if (detailServiceId.value) {
     closeServiceDetail()
   }
 }
@@ -1711,7 +1733,27 @@ function dismissSaveResult() {
         </section>
 
         <p v-if="loadError" class="container-state failed">{{ loadError }}</p>
-        <p v-else-if="isLoading" class="container-state">正在读取 docker inspect、分析挂载路径并加载 Nginx 配置...</p>
+        <div
+          v-else-if="isLoading"
+          class="nginx-skeleton"
+          role="status"
+          aria-live="polite"
+        >
+          <p class="nginx-skeleton-caption">
+            正在读取 docker inspect、分析挂载路径并加载 Nginx 配置…
+          </p>
+          <div class="nginx-skeleton-grid" aria-hidden="true">
+            <div v-for="n in 4" :key="n" class="nginx-skeleton-card">
+              <div class="nginx-skeleton-card-head">
+                <span class="skeleton-line lg"></span>
+                <span class="skeleton-chip"></span>
+              </div>
+              <span class="skeleton-line"></span>
+              <span class="skeleton-line w80"></span>
+              <span class="skeleton-line w60"></span>
+            </div>
+          </div>
+        </div>
         <p v-else-if="connectionHint" class="container-state">{{ connectionHint }}</p>
         <p v-else-if="configLoadError" class="container-state failed">{{ configLoadError }}</p>
 
@@ -1722,6 +1764,7 @@ function dismissSaveResult() {
           @click.self="cancelEditing"
         >
           <aside
+            ref="editorModalRef"
             class="nginx-editor-modal"
             role="dialog"
             aria-modal="true"
@@ -1772,7 +1815,7 @@ function dismissSaveResult() {
                   title="取消编辑"
                   @click="cancelEditing"
                 >
-                  ×
+                  <X :size="18" aria-hidden="true" />
                 </button>
               </div>
             </header>
@@ -1809,7 +1852,7 @@ function dismissSaveResult() {
                 aria-label="关闭"
                 @click="dismissSaveResult"
               >
-                ×
+                <X :size="16" aria-hidden="true" />
               </button>
             </div>
           </aside>
@@ -1847,7 +1890,7 @@ function dismissSaveResult() {
                 aria-label="关闭差异预览"
                 @click="closeDiffPreview"
               >
-                ×
+                <X :size="18" aria-hidden="true" />
               </button>
             </header>
 
@@ -2110,7 +2153,7 @@ function dismissSaveResult() {
               <span v-if="detailService.hasHttps">HTTPS</span>
             </div>
             <button class="nginx-detail-close" type="button" aria-label="关闭详情" @click="closeServiceDetail">
-              ×
+              <X :size="18" aria-hidden="true" />
             </button>
           </div>
         </header>

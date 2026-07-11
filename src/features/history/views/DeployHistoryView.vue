@@ -25,6 +25,10 @@ const expandedId = ref(null)
 const copiedKey = ref('')
 let copiedTimer = null
 
+// 删除二次确认：首次点击进入“确认”态，~3.5s 内再次点击才真正删除，否则自动还原。
+const confirmingDeleteId = ref('')
+let confirmDeleteTimer = null
+
 const packageRecords = computed(() => deployments.value.filter(isPackageRecord))
 const deployRecords = computed(() => deployments.value.filter(isDeployRecord))
 const frontendRecords = computed(() => deployments.value.filter(isFrontendRecord))
@@ -40,6 +44,11 @@ const visibleRecords = computed(() => {
 
   return deployRecords.value
 })
+
+// 分段控件滑块位置：与模板中 部署/前端/打包 的顺序一致。
+const switchIndex = computed(() =>
+  Math.max(0, ['deploy', 'frontend', 'package'].indexOf(activeRecordType.value)),
+)
 
 const activeTitle = computed(() => {
   if (activeRecordType.value === 'package') {
@@ -90,6 +99,7 @@ watch(
 // 切换记录类型时收起已展开项，避免跨类型残留。
 watch(activeRecordType, () => {
   expandedId.value = null
+  clearDeleteConfirm()
 })
 
 // 卡片放大/缩小用 GSAP Flip 做布局补间：grid 的 span 尺寸切换在 CSS 里不可过渡，
@@ -145,6 +155,11 @@ function toggleExpanded(id) {
 // 点击任意卡片以外的区域收起当前展开卡；点其它卡片交由该卡自身按钮处理（切换）。
 // 卡片按钮的 @click 会先同步写好 expandedId 再冒泡到这里，故“点开卡片”那一下不会被误判成外部点击。
 function handleOutsideClick(event) {
+  // 点击确认删除按钮以外的任意处，撤销待确认状态。
+  if (confirmingDeleteId.value && !event.target?.closest?.('.history-delete')) {
+    clearDeleteConfirm()
+  }
+
   if (!expandedId.value) {
     return
   }
@@ -170,6 +185,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutsideClick)
   flipTween?.kill()
   flipTween = null
+  clearDeleteConfirm()
 })
 
 function isPackageRecord(item) {
@@ -296,6 +312,36 @@ function formatTime(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+function clearDeleteConfirm() {
+  confirmingDeleteId.value = ''
+  if (confirmDeleteTimer) {
+    clearTimeout(confirmDeleteTimer)
+    confirmDeleteTimer = null
+  }
+}
+
+// 首次点击进入确认态并起 3.5s 计时；确认态内再次点击才真正删除。
+function requestDelete(id) {
+  if (deletingDeploymentIds.value.includes(id)) {
+    return
+  }
+
+  if (confirmingDeleteId.value === id) {
+    clearDeleteConfirm()
+    deleteDeploymentRecord(id)
+    return
+  }
+
+  confirmingDeleteId.value = id
+  if (confirmDeleteTimer) {
+    clearTimeout(confirmDeleteTimer)
+  }
+  confirmDeleteTimer = setTimeout(() => {
+    confirmingDeleteId.value = ''
+    confirmDeleteTimer = null
+  }, 3500)
+}
+
 async function copyValue(key, value) {
   if (!value || value === '-') {
     return
@@ -322,6 +368,11 @@ async function copyValue(key, value) {
         <h3>{{ activeTitle }}</h3>
       </div>
       <div class="history-switch">
+        <span
+          class="history-switch-thumb"
+          :style="{ transform: `translateX(${switchIndex * 100}%)` }"
+          aria-hidden="true"
+        ></span>
         <button
           type="button"
           class="history-switch-button"
@@ -387,12 +438,23 @@ async function copyValue(key, value) {
           <button
             type="button"
             class="history-delete"
+            :class="{ confirming: confirmingDeleteId === item.id }"
             :disabled="deletingDeploymentIds.includes(item.id)"
-            :title="deletingDeploymentIds.includes(item.id) ? '删除中…' : '删除记录'"
-            aria-label="删除记录"
-            @click.stop="deleteDeploymentRecord(item.id)"
+            :title="
+              deletingDeploymentIds.includes(item.id)
+                ? '删除中…'
+                : confirmingDeleteId === item.id
+                ? '再次点击确认删除'
+                : '删除记录'
+            "
+            :aria-label="confirmingDeleteId === item.id ? '确认删除记录' : '删除记录'"
+            @click.stop="requestDelete(item.id)"
           >
-            <Trash2 :size="15" />
+            <template v-if="confirmingDeleteId === item.id">
+              <Trash2 :size="13" />
+              确认
+            </template>
+            <Trash2 v-else :size="15" />
           </button>
 
           <div v-if="expandedId === item.id" class="history-drawer">

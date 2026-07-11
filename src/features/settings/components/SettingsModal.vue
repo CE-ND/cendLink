@@ -1,8 +1,9 @@
 <script setup>
-import { onBeforeUnmount, onMounted } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Moon, Sun, X } from '@lucide/vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { useTheme } from '../../../composables/useTheme.js'
+import { useFocusTrap } from '../../../composables/useFocusTrap.js'
 
 // 设置以模态框形式展示，由左下角入口触发，不再占用独立路由页面。
 const props = defineProps({
@@ -27,6 +28,10 @@ const {
 
 // 主题在此即时切换并持久化，与命令超时（需点保存）不同，无需走保存按钮。
 const { theme, setTheme } = useTheme()
+
+// 弹层焦点管理：打开移焦入面板、Tab 循环、关闭归还焦点。
+const modalRef = ref(null)
+useFocusTrap(() => props.open, () => modalRef.value)
 
 const THEME_OPTIONS = [
   { value: 'light', label: '浅色' },
@@ -64,6 +69,7 @@ onBeforeUnmount(() => {
     <transition name="settings-modal">
       <div v-if="open" class="settings-modal-backdrop" @click="emit('close')">
         <section
+          ref="modalRef"
           class="settings-modal"
           role="dialog"
           aria-modal="true"
@@ -93,7 +99,13 @@ onBeforeUnmount(() => {
                   <small>切换应用整体的浅色 / 深色外观，选择后立即生效并保存到本地。</small>
                 </span>
 
-                <div class="theme-segment" role="radiogroup" aria-label="主题">
+                <div
+                  class="theme-segment"
+                  :class="{ 'is-dark': theme === 'dark' }"
+                  role="radiogroup"
+                  aria-label="主题"
+                >
+                  <span class="theme-segment-thumb" aria-hidden="true"></span>
                   <button
                     v-for="option in THEME_OPTIONS"
                     :key="option.value"

@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
+import RunProgress from '../../workspace/components/RunProgress.vue'
+import CopyButton from '../../../components/ui/CopyButton.vue'
 
 const {
   savedServers,
@@ -30,6 +32,13 @@ const {
 } = useWorkspaceSession()
 
 const emit = defineEmits(['open-logs'])
+
+// 前端上传管线的锚定步骤（名称与 frontendUploadRunner 的 runStep 一致）。
+const FRONTEND_STAGES = [
+  { key: 'precheck', label: '远程预检' },
+  { key: 'upload', label: '上传压缩包' },
+  { key: 'publish', label: '解压并发布' },
+]
 
 const pageRef = ref(null)
 usePageEntrance(pageRef)
@@ -167,7 +176,11 @@ onMounted(() => {
         </div>
         <span
           class="state-pill"
-          :class="{ success: frontendUploadResult?.ok, failed: frontendUploadResult && !frontendUploadResult.ok }"
+          :class="{
+            success: frontendUploadResult?.ok && !isUploadingFrontend,
+            failed: frontendUploadResult && !frontendUploadResult.ok && !isUploadingFrontend,
+            running: isUploadingFrontend,
+          }"
         >
           {{ isUploadingFrontend ? 'Uploading' : frontendUploadResult?.status || 'Idle' }}
         </span>
@@ -379,10 +392,13 @@ onMounted(() => {
             <button
               class="primary-button"
               type="button"
+              :class="{ 'is-loading': isUploadingFrontend }"
+              :aria-busy="isUploadingFrontend"
               :disabled="!canUploadFrontend || isUploadingFrontend"
               @click="runFrontendUpload"
             >
-              {{ isUploadingFrontend ? '上传中...' : '开始上传' }}
+              <span v-if="isUploadingFrontend" class="btn-spinner" aria-hidden="true"></span>
+              {{ isUploadingFrontend ? '上传中…' : '开始上传' }}
             </button>
             <button
               class="secondary-button"
@@ -412,44 +428,106 @@ onMounted(() => {
           <p class="eyebrow">Upload Plan</p>
           <h3>上传预览</h3>
         </div>
-        <span class="state-pill">{{ frontendUploadPreview?.projectName || 'Pending' }}</span>
+        <span class="state-pill">{{ frontendUploadPreview ? '已就绪' : '待生成' }}</span>
       </div>
 
-      <dl class="package-meta-grid deploy-meta-grid">
-        <div>
-          <dt>远程压缩包</dt>
-          <dd>{{ frontendUploadPreview?.remoteArchivePath || '-' }}</dd>
+      <div class="deploy-preview-body">
+        <div
+          class="preview-identity"
+          :class="{ empty: !(frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir) }"
+        >
+          <div class="preview-identity-main">
+            <span class="preview-identity-label">发布目录</span>
+            <strong :title="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir">
+              {{ frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir || '等待填写上传参数' }}
+            </strong>
+          </div>
+          <CopyButton
+            v-if="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
+            :value="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
+            label="复制发布目录"
+          />
         </div>
-        <div>
-          <dt>发布目录</dt>
-          <dd>{{ frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir || '-' }}</dd>
-        </div>
-        <div>
-          <dt>基础路径</dt>
-          <dd>{{ frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir || '-' }}</dd>
-        </div>
-        <div>
-          <dt>项目目录</dt>
-          <dd>{{ frontendUploadPreview?.projectDir || frontendForm.projectDir || '-' }}</dd>
-        </div>
-        <div class="wide">
-          <dt>远程预检</dt>
-          <dd class="dockerfile-preview">
-            <pre><code>{{ frontendUploadPreview?.precheckCommand || '等待填写上传参数' }}</code></pre>
-          </dd>
-        </div>
-        <div class="wide">
-          <dt>发布动作</dt>
-          <dd class="dockerfile-preview deploy-command-preview">
-            <pre><code>{{ frontendUploadPreview?.publishCommand || '等待选择前端压缩包' }}</code></pre>
-          </dd>
-        </div>
-      </dl>
 
-      <div v-if="frontendUploadResult" class="package-result-block">
-        <p :class="['result-message', { ok: frontendUploadResult.ok }]">{{ frontendUploadResult.message }}</p>
-        <div class="command-meta">
-          <span class="command-stat">耗时: {{ frontendUploadResult.durationMs }} ms</span>
+        <div class="preview-groups">
+          <section class="preview-group">
+            <p class="preview-group-title">远程路径</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>基础路径</dt>
+                <dd class="mono" :title="frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir">
+                  {{ frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir || '-' }}
+                </dd>
+              </div>
+              <div class="preview-row">
+                <dt>项目目录</dt>
+                <dd :title="frontendUploadPreview?.projectDir || frontendForm.projectDir">
+                  {{ frontendUploadPreview?.projectDir || frontendForm.projectDir || '-' }}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="preview-group">
+            <p class="preview-group-title">发布配置</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>远程压缩包</dt>
+                <dd class="mono" :title="frontendUploadPreview?.remoteArchivePath">
+                  {{ frontendUploadPreview?.remoteArchivePath || '-' }}
+                </dd>
+              </div>
+              <div class="preview-row">
+                <dt>发布策略</dt>
+                <dd>{{ strategyLabel }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>入口文件</dt>
+                <dd>{{ frontendForm.entryFile || 'index.html' }}</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        <section class="preview-commands">
+          <div class="preview-command">
+            <div class="preview-group-head">
+              <p class="preview-group-title">远程预检</p>
+              <CopyButton
+                v-if="frontendUploadPreview?.precheckCommand"
+                :value="frontendUploadPreview.precheckCommand"
+                label="复制命令"
+              />
+            </div>
+            <div class="command-panel">
+              <pre><code>{{ frontendUploadPreview?.precheckCommand || '等待填写上传参数' }}</code></pre>
+            </div>
+          </div>
+
+          <div class="preview-command">
+            <div class="preview-group-head">
+              <p class="preview-group-title">发布动作</p>
+              <CopyButton
+                v-if="frontendUploadPreview?.publishCommand"
+                :value="frontendUploadPreview.publishCommand"
+                label="复制命令"
+              />
+            </div>
+            <div class="command-panel">
+              <pre><code>{{ frontendUploadPreview?.publishCommand || '等待选择前端压缩包' }}</code></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="isUploadingFrontend || frontendUploadResult" class="package-result-block">
+        <RunProgress
+          :active="isUploadingFrontend"
+          :result="frontendUploadResult"
+          :stages="FRONTEND_STAGES"
+          running-text="正在上传并发布前端包…"
+        />
+        <div v-if="frontendUploadResult && !isUploadingFrontend" class="command-meta">
           <span class="command-stat">文件: {{ frontendUploadResult.publishedFileCount || 0 }}</span>
           <span class="command-stat">备份: {{ frontendUploadResult.backupDir || '-' }}</span>
         </div>

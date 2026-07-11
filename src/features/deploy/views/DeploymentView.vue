@@ -3,6 +3,8 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { gsap } from "gsap";
 import { useWorkspaceSession } from "../../workspace/composables/useWorkspaceSession.js";
 import AppSelect from "../../../components/ui/AppSelect.vue";
+import RunProgress from "../../workspace/components/RunProgress.vue";
+import CopyButton from "../../../components/ui/CopyButton.vue";
 
 // 远程部署页：选择镜像包、编辑部署参数、实时预览 docker run 并执行部署。
 const {
@@ -30,6 +32,18 @@ const {
 } = useWorkspaceSession();
 
 const emit = defineEmits(["open-logs"]);
+
+// 部署管线的锚定步骤（名称与 deploymentRunner 的 runStep 一致），运行中先按 pending 展示，
+// 结束后由真实 steps[] 逐条标记 success/failed。
+const DEPLOY_STAGES = [
+  { key: "precheck", label: "远程预检查" },
+  { key: "port", label: "检查端口占用" },
+  { key: "upload", label: "上传镜像包" },
+  { key: "load", label: "导入镜像" },
+  { key: "mkdir", label: "创建运行目录" },
+  { key: "run", label: "启动容器" },
+  { key: "inspect", label: "检查容器状态" },
+];
 
 const restartPolicyOptions = [
   { value: "unless-stopped", label: "unless-stopped" },
@@ -384,8 +398,9 @@ watch(isAdvancedOpen, async (isOpen) => {
         <span
           class="state-pill"
           :class="{
-            success: deployResult?.ok,
-            failed: deployResult && !deployResult.ok,
+            success: deployResult?.ok && !isDeploying,
+            failed: deployResult && !deployResult.ok && !isDeploying,
+            running: isDeploying,
           }"
         >
           {{ isDeploying ? "Deploying" : deployResult?.status || "Idle" }}
@@ -781,10 +796,13 @@ watch(isAdvancedOpen, async (isOpen) => {
             <button
               class="primary-button"
               type="button"
+              :class="{ 'is-loading': isDeploying }"
+              :aria-busy="isDeploying"
               :disabled="!canDeploy || isDeploying"
               @click="runDeployment"
             >
-              {{ isDeploying ? "部署中..." : "开始部署" }}
+              <span v-if="isDeploying" class="btn-spinner" aria-hidden="true"></span>
+              {{ isDeploying ? "部署中…" : "开始部署" }}
             </button>
             <button
               class="secondary-button"
@@ -824,69 +842,105 @@ watch(isAdvancedOpen, async (isOpen) => {
           <p class="eyebrow">Deployment Plan</p>
           <h3>部署预览</h3>
         </div>
-        <span class="state-pill">{{
-          deployPreview?.imageRef || "Pending"
-        }}</span>
+        <span class="state-pill">{{ deployPreview ? "已就绪" : "待生成" }}</span>
       </div>
 
-      <dl class="package-meta-grid deploy-meta-grid">
-        <div>
-          <dt>远程包</dt>
-          <dd>{{ deployPreview?.remotePackagePath || "-" }}</dd>
+      <div class="deploy-preview-body">
+        <div class="preview-identity" :class="{ empty: !deployPreview?.imageRef }">
+          <div class="preview-identity-main">
+            <span class="preview-identity-label">镜像引用</span>
+            <strong :title="deployPreview?.imageRef">{{ deployPreview?.imageRef || "等待填写部署参数" }}</strong>
+          </div>
+          <CopyButton
+            v-if="deployPreview?.imageRef"
+            :value="deployPreview.imageRef"
+            label="复制镜像引用"
+          />
         </div>
-        <div>
-          <dt>发布目录</dt>
-          <dd>{{ deployPreview?.remoteReleaseDir || "-" }}</dd>
-        </div>
-        <div>
-          <dt>镜像引用</dt>
-          <dd>{{ deployPreview?.imageRef || "-" }}</dd>
-        </div>
-        <div>
-          <dt>容器名</dt>
-          <dd>{{ deployPreview?.containerName || "-" }}</dd>
-        </div>
-        <div>
-          <dt>端口映射</dt>
-          <dd>
-            {{ deployPreview?.hostPort || "-" }} ->
-            {{ deployPreview?.containerPort || "-" }}
-          </dd>
-        </div>
-        <div class="wide">
-          <dt>环境变量</dt>
-          <dd class="deploy-inline-list">
-            {{ environmentLines.join(" | ") || "暂无" }}
-          </dd>
-        </div>
-        <div class="wide">
-          <dt>挂载目录</dt>
-          <dd class="deploy-inline-list">
-            {{ mountLines.join(" | ") || "暂无" }}
-          </dd>
-        </div>
-        <div class="wide">
-          <dt>创建目录命令</dt>
-          <dd class="dockerfile-preview">
-            <pre><code>{{ deployPreview?.mkdirCommand || '等待填写部署参数' }}</code></pre>
-          </dd>
-        </div>
-        <div class="wide">
-          <dt>Docker Run</dt>
-          <dd class="dockerfile-preview deploy-command-preview">
-            <pre><code>{{ deployPreview?.runCommand || '等待填写部署参数' }}</code></pre>
-          </dd>
-        </div>
-      </dl>
 
-      <div v-if="deployResult" class="package-result-block">
-        <p :class="['result-message', { ok: deployResult.ok }]">
-          {{ deployResult.message }}
-        </p>
-        <div class="command-meta">
-          <span class="command-stat"
-            >耗时: {{ deployResult.durationMs }} ms</span
-          >
+        <div class="preview-groups">
+          <section class="preview-group">
+            <p class="preview-group-title">容器</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>容器名</dt>
+                <dd :title="deployPreview?.containerName">{{ deployPreview?.containerName || "-" }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>端口映射</dt>
+                <dd>{{ deployPreview?.hostPort || "-" }} → {{ deployPreview?.containerPort || "-" }}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="preview-group">
+            <p class="preview-group-title">远程路径</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>远程包</dt>
+                <dd class="mono" :title="deployPreview?.remotePackagePath">{{ deployPreview?.remotePackagePath || "-" }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>发布目录</dt>
+                <dd class="mono" :title="deployPreview?.remoteReleaseDir">{{ deployPreview?.remoteReleaseDir || "-" }}</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        <section class="preview-group">
+          <p class="preview-group-title">运行配置</p>
+          <dl class="preview-list">
+            <div class="preview-row wide">
+              <dt>环境变量</dt>
+              <dd>{{ environmentLines.join(" | ") || "暂无" }}</dd>
+            </div>
+            <div class="preview-row wide">
+              <dt>挂载目录</dt>
+              <dd>{{ mountLines.join(" | ") || "暂无" }}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="preview-commands">
+          <div class="preview-command">
+            <div class="preview-group-head">
+              <p class="preview-group-title">创建目录命令</p>
+              <CopyButton
+                v-if="deployPreview?.mkdirCommand"
+                :value="deployPreview.mkdirCommand"
+                label="复制命令"
+              />
+            </div>
+            <div class="command-panel">
+              <pre><code>{{ deployPreview?.mkdirCommand || '等待填写部署参数' }}</code></pre>
+            </div>
+          </div>
+
+          <div class="preview-command">
+            <div class="preview-group-head">
+              <p class="preview-group-title">Docker Run</p>
+              <CopyButton
+                v-if="deployPreview?.runCommand"
+                :value="deployPreview.runCommand"
+                label="复制命令"
+              />
+            </div>
+            <div class="command-panel">
+              <pre><code>{{ deployPreview?.runCommand || '等待填写部署参数' }}</code></pre>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div v-if="isDeploying || deployResult" class="package-result-block">
+        <RunProgress
+          :active="isDeploying"
+          :result="deployResult"
+          :stages="DEPLOY_STAGES"
+          running-text="正在部署镜像包…"
+        />
+        <div v-if="deployResult && !isDeploying" class="command-meta">
           <span class="command-stat"
             >容器: {{ deployResult.containerName || "-" }}</span
           >

@@ -4,6 +4,8 @@ import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSes
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { buildBaseImage, parseDockerfileText } from '../../../shared/dockerfileTemplates.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
+import RunProgress from '../../workspace/components/RunProgress.vue'
+import CopyButton from '../../../components/ui/CopyButton.vue'
 
 // 本地镜像包生成页，负责展示 Jar -> Docker 镜像压缩包的完整流程。
 const {
@@ -39,8 +41,22 @@ const {
 
 const emit = defineEmits(['open-logs'])
 
+// 本地打包的锚定步骤（打包器不产出结构化 steps[]，仅作运行中的预期展示；结果由 toast 呈现）。
+const PACKAGE_STAGES = [
+  { key: 'dockerfile', label: '生成 Dockerfile' },
+  { key: 'build', label: 'docker build 构建镜像' },
+  { key: 'save', label: 'docker save 导出' },
+  { key: 'gzip', label: 'gzip 压缩为 tar.gz' },
+]
+
 const previewLines = computed(() => {
   return packagePreview.value?.dockerfileText?.split('\n') || []
+})
+
+// 运行用户：有预览用预览值，否则回退到当前表单（避免无预览时一律显示 root）。
+const previewRunUser = computed(() => {
+  const source = packagePreview.value || packageForm
+  return source.useNonRootUser ? source.appUser || 'spring' : 'root'
 })
 
 const isDockerfileImportOpen = ref(false)
@@ -364,7 +380,7 @@ onBeforeUnmount(() => {
           <p class="eyebrow">Docker Package</p>
           <h3>Jar 打镜像包</h3>
         </div>
-        <span class="state-pill" :class="{ success: packageResult?.ok, failed: packageResult && !packageResult.ok }">
+        <span class="state-pill" :class="{ success: packageResult?.ok && !isBuildingPackage, failed: packageResult && !packageResult.ok && !isBuildingPackage, running: isBuildingPackage }">
           {{ isBuildingPackage ? 'Building' : packageResult?.status || 'Idle' }}
         </span>
       </div>
@@ -555,8 +571,9 @@ onBeforeUnmount(() => {
 
         <div class="package-actions">
         <div class="panel-actions">
-          <button class="primary-button" type="button" :disabled="!canBuildImagePackage || isBuildingPackage" @click="buildImagePackage">
-            {{ isBuildingPackage ? '生成中...' : '生成镜像包' }}
+          <button class="primary-button" type="button" :class="{ 'is-loading': isBuildingPackage }" :aria-busy="isBuildingPackage" :disabled="!canBuildImagePackage || isBuildingPackage" @click="buildImagePackage">
+            <span v-if="isBuildingPackage" class="btn-spinner" aria-hidden="true"></span>
+            {{ isBuildingPackage ? '生成中…' : '生成镜像包' }}
           </button>
           <button class="secondary-button" type="button" @click="refreshPackagePreview">刷新预览</button>
           <button class="secondary-button" type="button" @click="openImagePackageDirectory">打开目录</button>
@@ -574,50 +591,87 @@ onBeforeUnmount(() => {
           <p class="eyebrow">Configuration Preview</p>
           <h3>配置信息预览</h3>
         </div>
-        <span class="state-pill">{{ packagePreview?.imageRef || 'Pending' }}</span>
+        <span class="state-pill">{{ packagePreview ? '已就绪' : '待生成' }}</span>
       </div>
 
-      <dl class="package-meta-grid">
-        <div>
-          <dt>镜像名</dt>
-          <dd>{{ packagePreview?.imageName || '-' }}</dd>
+      <div class="package-preview-body">
+        <div class="preview-identity" :class="{ empty: !packagePreview?.imageRef }">
+          <div class="preview-identity-main">
+            <span class="preview-identity-label">镜像引用</span>
+            <strong :title="packagePreview?.imageRef">{{ packagePreview?.imageRef || '等待生成镜像信息' }}</strong>
+          </div>
+          <CopyButton
+            v-if="packagePreview?.imageRef"
+            :value="packagePreview.imageRef"
+            label="复制镜像引用"
+          />
         </div>
-        <div>
-          <dt>Tag</dt>
-          <dd>{{ packagePreview?.imageTag || '-' }}</dd>
-        </div>
-        <div>
-          <dt>镜像引用</dt>
-          <dd>{{ packagePreview?.imageRef || '-' }}</dd>
-        </div>
-        <div>
-          <dt>Jar 文件</dt>
-          <dd>{{ packagePreview?.jarName || '-' }}</dd>
-        </div>
-        <div>
-          <dt>模板</dt>
-          <dd>{{ packagePreview?.dockerfileTemplateName || packageForm.dockerfileTemplateName }}</dd>
-        </div>
-        <div>
-          <dt>基础镜像</dt>
-          <dd>{{ packagePreview?.baseImage || packageForm.baseImage }}</dd>
-        </div>
-        <div>
-          <dt>Java</dt>
-          <dd>{{ packagePreview?.javaVersion || packageForm.javaVersion }}</dd>
-        </div>
-        <div>
-          <dt>运行用户</dt>
-          <dd>{{ packagePreview?.useNonRootUser ? packagePreview?.appUser : 'root' }}</dd>
-        </div>
-        <div class="wide">
-          <dt>Dockerfile</dt>
-          <dd class="dockerfile-preview">
-            <pre><code>{{ previewLines.join('\n') || '等待选择 Jar 文件后生成预览' }}</code></pre>
-          </dd>
-        </div>
-      </dl>
 
+        <div class="preview-groups">
+          <section class="preview-group">
+            <p class="preview-group-title">镜像</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>镜像名</dt>
+                <dd :title="packagePreview?.imageName">{{ packagePreview?.imageName || '-' }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>Tag</dt>
+                <dd>{{ packagePreview?.imageTag || '-' }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>Jar 文件</dt>
+                <dd :title="packagePreview?.jarName">{{ packagePreview?.jarName || '-' }}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section class="preview-group">
+            <p class="preview-group-title">运行环境</p>
+            <dl class="preview-list">
+              <div class="preview-row">
+                <dt>模板</dt>
+                <dd>{{ packagePreview?.dockerfileTemplateName || packageForm.dockerfileTemplateName }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>基础镜像</dt>
+                <dd class="mono" :title="packagePreview?.baseImage || packageForm.baseImage">
+                  {{ packagePreview?.baseImage || packageForm.baseImage }}
+                </dd>
+              </div>
+              <div class="preview-row">
+                <dt>Java</dt>
+                <dd>{{ packagePreview?.javaVersion || packageForm.javaVersion }}</dd>
+              </div>
+              <div class="preview-row">
+                <dt>运行用户</dt>
+                <dd>{{ previewRunUser }}</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+
+        <section class="preview-group preview-dockerfile">
+          <div class="preview-group-head">
+            <p class="preview-group-title">Dockerfile</p>
+            <CopyButton
+              v-if="previewLines.length"
+              :value="previewLines.join('\n')"
+              label="复制 Dockerfile"
+            />
+          </div>
+          <div class="command-panel">
+            <pre><code>{{ previewLines.join('\n') || '等待选择 Jar 文件后生成预览' }}</code></pre>
+          </div>
+        </section>
+      </div>
+
+      <RunProgress
+        v-if="isBuildingPackage"
+        :active="true"
+        :stages="PACKAGE_STAGES"
+        running-text="正在生成镜像包…"
+      />
     </section>
 
     <transition name="package-toast">

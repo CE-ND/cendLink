@@ -142,15 +142,17 @@ function updateField(field, value) {
       </div>
 
       <div class="auth-fields" :class="{ 'is-private-key': modelValue.authType === 'privateKey' }">
-        <label v-if="modelValue.authType === 'password'" class="field">
-          <span>Password</span>
-          <input
-            :value="modelValue.password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="不会写入日志"
-            @input="updateField('password', $event.target.value)"
-          />
+        <template v-if="modelValue.authType === 'password'">
+          <label class="field">
+            <span>Password</span>
+            <input
+              :value="modelValue.password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="不会写入日志"
+              @input="updateField('password', $event.target.value)"
+            />
+          </label>
           <label class="checkbox-field">
             <input
               :checked="modelValue.rememberPassword"
@@ -159,7 +161,7 @@ function updateField(field, value) {
             />
             <span>记住密码</span>
           </label>
-        </label>
+        </template>
 
         <template v-else>
           <div class="field">

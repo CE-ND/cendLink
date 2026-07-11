@@ -228,8 +228,10 @@ function createServer() {
         :aria-label="theme === 'dark' ? '切换到浅色主题' : '切换到深色主题'"
         @click="emit('toggleTheme')"
       >
-        <Sun v-if="theme === 'dark'" :size="18" aria-hidden="true" />
-        <Moon v-else :size="18" aria-hidden="true" />
+        <Transition name="theme-icon" mode="out-in">
+          <Sun v-if="theme === 'dark'" key="sun" :size="18" aria-hidden="true" />
+          <Moon v-else key="moon" :size="18" aria-hidden="true" />
+        </Transition>
       </button>
     </div>
   </aside>

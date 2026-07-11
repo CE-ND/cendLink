@@ -464,6 +464,14 @@ watch(theme, () => {
           去连接服务器
         </button>
       </div>
+
+      <div
+        v-else-if="status === 'connecting'"
+        class="terminal-overlay terminal-overlay-connecting"
+      >
+        <span class="terminal-connecting-dot" aria-hidden="true"></span>
+        <p class="terminal-overlay-text">正在连接 {{ targetLabel }}…</p>
+      </div>
     </div>
   </section>
 </template>

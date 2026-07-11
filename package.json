@@ -70,5 +70,12 @@
       "perMachine": false,
       "allowToChangeInstallationDirectory": true
     }
+  },
+  "allowScripts": {
+    "cpu-features@0.0.10": true,
+    "electron@39.8.10": true,
+    "electron-winstaller@5.4.0": true,
+    "sharp@0.34.5": true,
+    "ssh2@1.17.0": true
   }
 }

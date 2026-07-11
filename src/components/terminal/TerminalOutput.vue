@@ -1,5 +1,6 @@
 <script setup>
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { Terminal } from '@lucide/vue'
 
 // 展示当前工作区的共享活动日志，并支持放大查看长日志。
 const props = defineProps({
@@ -41,6 +42,27 @@ defineExpose({
   closeExpanded,
 })
 
+// 复制当前活动日志到剪贴板，短暂闪“已复制”。
+const copiedLog = ref(false)
+let copiedLogTimer = null
+
+async function copyLog() {
+  if (!props.lines.length) {
+    return
+  }
+
+  try {
+    await navigator.clipboard.writeText(props.lines.join('\n'))
+    copiedLog.value = true
+    clearTimeout(copiedLogTimer)
+    copiedLogTimer = setTimeout(() => {
+      copiedLog.value = false
+    }, 1400)
+  } catch {
+    // 剪贴板不可用时静默忽略。
+  }
+}
+
 /**
  * 将日志滚动到最新一行。
  */
@@ -67,6 +89,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleWindowKeydown)
+  clearTimeout(copiedLogTimer)
 })
 
 watch(
@@ -98,9 +121,23 @@ watch(isExpanded, async (expanded) => {
         <span>Activity Log</span>
         <small>{{ lines.length }} lines</small>
       </div>
-      <button class="terminal-action" type="button" @click="openExpanded">放大查看</button>
+      <div class="terminal-header-actions">
+        <button
+          class="terminal-action"
+          type="button"
+          :disabled="!lines.length"
+          @click="copyLog"
+        >
+          {{ copiedLog ? '已复制' : '复制' }}
+        </button>
+        <button class="terminal-action" type="button" @click="openExpanded">放大查看</button>
+      </div>
     </header>
-    <pre ref="inlineLogRef" class="terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
+    <pre v-if="lines.length" ref="inlineLogRef" class="terminal-scrollable"><code>{{ lines.join('\n') }}</code></pre>
+    <div v-else class="terminal-log-empty">
+      <Terminal :size="30" :stroke-width="1.5" aria-hidden="true" />
+      <p>暂无输出</p>
+    </div>
   </section>
 
   <teleport to="body">
@@ -118,9 +155,23 @@ watch(isExpanded, async (expanded) => {
             <strong>Activity Log</strong>
             <small>{{ lines.length }} lines</small>
           </div>
-          <button class="terminal-action" type="button" @click="closeExpanded">关闭</button>
+          <div class="terminal-header-actions">
+            <button
+              class="terminal-action"
+              type="button"
+              :disabled="!lines.length"
+              @click="copyLog"
+            >
+              {{ copiedLog ? '已复制' : '复制' }}
+            </button>
+            <button class="terminal-action" type="button" @click="closeExpanded">关闭</button>
+          </div>
         </header>
-        <pre ref="modalLogRef" class="terminal-modal-body terminal-scrollable"><code>{{ lines.length ? lines.join('\n') : '暂无输出' }}</code></pre>
+        <pre v-if="lines.length" ref="modalLogRef" class="terminal-modal-body terminal-scrollable"><code>{{ lines.join('\n') }}</code></pre>
+        <div v-else class="terminal-modal-body terminal-log-empty">
+          <Terminal :size="34" :stroke-width="1.5" aria-hidden="true" />
+          <p>暂无输出</p>
+        </div>
       </section>
     </div>
   </teleport>

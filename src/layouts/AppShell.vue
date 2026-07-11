@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
 <template>
   <main class="connection-page">
     <header class="app-titlebar">
-      <div class="app-titlebar-brand"></div>
+      <div class="app-titlebar-brand">CendLink</div>
       <div class="app-titlebar-spacer"></div>
       <div v-if="hasWindowControls" class="window-controls" aria-label="窗口控制">
         <button class="window-control" type="button" aria-label="最小化" @click="minimizeWindow">

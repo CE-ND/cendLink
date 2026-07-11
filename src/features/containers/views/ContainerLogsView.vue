@@ -10,6 +10,8 @@ import {
   Square,
   ArrowDownToLine,
   Terminal,
+  Copy,
+  Check,
 } from "@lucide/vue";
 import { usePageEntrance } from "../../../composables/usePageEntrance.js";
 
@@ -47,6 +49,27 @@ const pageRef = ref(null);
 usePageEntrance(pageRef);
 
 let unsubscribeStream = null;
+
+// 复制当前日志到剪贴板，短暂闪“已复制”。
+const copiedLogs = ref(false);
+let copiedLogsTimer = null;
+
+async function copyLogs() {
+  if (!logOutput.value) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(String(logOutput.value));
+    copiedLogs.value = true;
+    clearTimeout(copiedLogsTimer);
+    copiedLogsTimer = setTimeout(() => {
+      copiedLogs.value = false;
+    }, 1400);
+  } catch {
+    // 剪贴板不可用时静默忽略。
+  }
+}
 
 const canQueryDocker = computed(() => {
   return Boolean(
@@ -113,6 +136,10 @@ const logPlaceholder = computed(() => {
     return "正在读取日志...";
   }
 
+  if (isFollowing.value && !logOutput.value) {
+    return "正在等待新日志…";
+  }
+
   if (!logOutput.value && !logError.value) {
     return "该容器暂无日志输出";
   }
@@ -138,6 +165,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   void stopFollowing({ silent: true });
+  clearTimeout(copiedLogsTimer);
   window.removeEventListener("scroll", closeActionMenu, true);
   window.removeEventListener("resize", closeActionMenu);
   window.removeEventListener("click", closeActionMenu);
@@ -894,6 +922,17 @@ function formatStreamError(error) {
           回到底部
         </button>
         <button
+          class="log-copy-button"
+          type="button"
+          :disabled="!hasLogContent"
+          :title="copiedLogs ? '已复制' : '复制日志'"
+          aria-label="复制日志"
+          @click="copyLogs"
+        >
+          <Check v-if="copiedLogs" :size="15" aria-hidden="true" />
+          <Copy v-else :size="15" aria-hidden="true" />
+        </button>
+        <button
           class="secondary-button"
           type="button"
           :disabled="!selectedContainer || isLoadingLogs || isFollowing"
@@ -929,7 +968,7 @@ function formatStreamError(error) {
             v-for="line in displayLogLines"
             :key="line.id"
             class="container-log-line"
-            :class="line.level"
+            :class="[line.level, { 'no-time': !line.time }]"
           >
             <span class="container-log-time" :title="line.fullTime">{{
               line.time
@@ -938,7 +977,12 @@ function formatStreamError(error) {
           </div>
         </template>
         <div v-else class="container-log-empty">
-          <Terminal :size="36" :stroke-width="1.5" aria-hidden="true" />
+          <span
+            v-if="isFollowing"
+            class="container-status-dot live container-log-waiting-dot"
+            aria-hidden="true"
+          ></span>
+          <Terminal v-else :size="36" :stroke-width="1.5" aria-hidden="true" />
           <p>{{ logPlaceholder }}</p>
         </div>
       </div>

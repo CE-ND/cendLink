@@ -59,12 +59,20 @@ const selectedLabel = computed(() => {
   return selectedOption.value?.label || props.placeholder
 })
 
+// 无障碍：把视觉高亮项同步给屏幕阅读器。
+const activeDescendantId = computed(() => {
+  return isOpen.value && highlightedIndex.value >= 0
+    ? `${menuId}-opt-${highlightedIndex.value}`
+    : undefined
+})
+
 watch(isOpen, (open) => {
   if (open) {
     addGlobalListeners()
     void nextTick(() => {
       syncMenuPosition()
       highlightSelected()
+      scrollActiveIntoView()
     })
     return
   }
@@ -146,6 +154,22 @@ function moveHighlight(step) {
 
   const current = highlightedIndex.value < 0 ? 0 : highlightedIndex.value
   highlightedIndex.value = (current + step + options.length) % options.length
+  scrollActiveIntoView()
+}
+
+// 键盘移动高亮时，把当前项滚动进可视区。
+function scrollActiveIntoView() {
+  void nextTick(() => {
+    menuRef.value
+      ?.querySelector('.app-select-option.active')
+      ?.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+// 当前高亮项的 DOM id，供逐项 id 与 aria-activedescendant 引用。
+function optionDomId(item) {
+  const index = selectableOptions.value.findIndex((option) => isSameValue(option.value, item.value))
+  return index >= 0 ? `${menuId}-opt-${index}` : undefined
 }
 
 function handleKeydown(event) {
@@ -255,6 +279,7 @@ function removeGlobalListeners() {
       :aria-expanded="isOpen"
       :aria-controls="menuId"
       aria-haspopup="listbox"
+      :aria-activedescendant="activeDescendantId"
       @click="toggleMenu"
       @keydown="handleKeydown"
     >
@@ -263,14 +288,15 @@ function removeGlobalListeners() {
     </button>
 
     <Teleport to="body">
-      <div
-        v-if="isOpen"
-        :id="menuId"
-        ref="menuRef"
-        class="app-select-menu"
-        :style="menuStyle"
-        role="listbox"
-      >
+      <Transition name="app-select-menu">
+        <div
+          v-if="isOpen"
+          :id="menuId"
+          ref="menuRef"
+          class="app-select-menu"
+          :style="menuStyle"
+          role="listbox"
+        >
         <template v-for="item in normalizedItems" :key="item.key">
           <div v-if="item.type === 'group'" class="app-select-group">
             {{ item.label }}
@@ -278,6 +304,7 @@ function removeGlobalListeners() {
           <button
             v-else
             type="button"
+            :id="optionDomId(item)"
             class="app-select-option"
             :class="{
               selected: selectedOption && isSameValue(item.value, selectedOption.value),
@@ -293,7 +320,8 @@ function removeGlobalListeners() {
             <span>{{ item.label }}</span>
           </button>
         </template>
-      </div>
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>

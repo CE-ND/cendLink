@@ -57,25 +57,28 @@ const router = useRouter()
 // 三个核心资源指标，转换成可直接渲染的卡片数据。
 const metricTiles = computed(() => {
   const metrics = props.metrics || {}
+  // 首次读取（尚无任何数据）时视为“加载中”，避免把读取过程显示成“无法获取”。
+  const loading = props.metricsLoading && !props.metrics
 
   return [
-    buildMetricTile('cpu', 'CPU', metrics.cpu, () => '处理器使用率'),
-    buildMetricTile('memory', '内存', metrics.memory, (data) => `${data.usedLabel} / ${data.totalLabel}`),
-    buildMetricTile('disk', '磁盘', metrics.disk, (data) => `${data.usedLabel} / ${data.totalLabel} · ${data.mount}`),
+    buildMetricTile('cpu', 'CPU', metrics.cpu, () => '处理器使用率', loading),
+    buildMetricTile('memory', '内存', metrics.memory, (data) => `${data.usedLabel} / ${data.totalLabel}`, loading),
+    buildMetricTile('disk', '磁盘', metrics.disk, (data) => `${data.usedLabel} / ${data.totalLabel} · ${data.mount}`, loading),
   ]
 })
 
-function buildMetricTile(key, label, data, detailFn) {
+function buildMetricTile(key, label, data, detailFn, loading) {
   const percent = data?.percent
   const hasValue = Number.isFinite(percent)
 
   return {
     key,
     label,
-    percentLabel: hasValue ? `${percent}%` : '—',
+    percentLabel: hasValue ? `${percent}%` : loading ? '···' : '—',
     width: hasValue ? `${percent}%` : '0%',
-    detail: hasValue ? detailFn(data) : '无法获取',
-    tone: hasValue ? metricTone(percent) : 'empty',
+    detail: hasValue ? detailFn(data) : loading ? '读取中…' : '无法获取',
+    tone: hasValue ? metricTone(percent) : loading ? 'loading' : 'empty',
+    loading: !hasValue && loading,
   }
 }
 
@@ -227,7 +230,7 @@ function goTo(routeName) {
               <strong>{{ tile.percentLabel }}</strong>
             </div>
             <div class="metric-bar">
-              <span :style="{ width: tile.width }"></span>
+              <span :style="tile.loading ? null : { width: tile.width }"></span>
             </div>
             <small :title="tile.detail">{{ tile.detail }}</small>
           </div>
