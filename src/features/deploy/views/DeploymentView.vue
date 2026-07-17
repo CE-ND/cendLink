@@ -1,10 +1,12 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { gsap } from "gsap";
+import { FileArchive, Trash2, Upload, UploadCloud } from "@lucide/vue";
 import { useWorkspaceSession } from "../../workspace/composables/useWorkspaceSession.js";
 import AppSelect from "../../../components/ui/AppSelect.vue";
 import RunProgress from "../../workspace/components/RunProgress.vue";
 import CopyButton from "../../../components/ui/CopyButton.vue";
+import InlineDeleteConfirm from "../../../components/ui/InlineDeleteConfirm.vue";
 
 // 远程部署页：选择镜像包、编辑部署参数、实时预览 docker run 并执行部署。
 const {
@@ -27,6 +29,7 @@ const {
   saveServiceTemplateFromDeploy,
   deleteServiceTemplate,
   selectDeployPackageFile,
+  selectDroppedDeployPackageFile,
   refreshDeployPreview,
   runDeployment,
 } = useWorkspaceSession();
@@ -85,6 +88,15 @@ const mountLines = computed(() => {
 const deployFormCard = ref(null);
 const isAdvancedOpen = ref(false);
 const isPackageHistoryOpen = ref(false);
+const isServiceTemplateCopyOpen = ref(false);
+const serviceTemplateCopyName = ref("");
+const serviceTemplateCopyError = ref("");
+const serviceTemplateCopyInputRef = ref(null);
+const pendingServiceTemplateDelete = ref(null);
+const isDeletingServiceTemplate = ref(false);
+const isPackageDragActive = ref(false);
+const packageDropError = ref("");
+let packageDragDepth = 0;
 let deployGsapContext = null;
 
 const packageHistory = computed(() => {
@@ -114,6 +126,12 @@ const currentPackageSource = computed(() => {
 
   return selectedPackageRecord.value ? "来自打包记录" : "手动选择";
 });
+
+const currentPackageFileName = computed(() => {
+  return getFileName(deployForm.localPackagePath);
+});
+
+const hasDeployPackage = computed(() => Boolean(deployForm.localPackagePath));
 
 const selectedServiceTemplateSummary = computed(() => {
   if (!hasServiceTemplateBridge.value) {
@@ -189,36 +207,161 @@ async function saveCurrentServiceTemplate() {
   await saveServiceTemplateFromDeploy();
 }
 
-async function createServiceTemplateCopy() {
-  const name = window.prompt(
-    "服务模板名称",
+function changeServiceTemplate(templateId) {
+  pendingServiceTemplateDelete.value = null;
+  isServiceTemplateCopyOpen.value = false;
+  serviceTemplateCopyError.value = "";
+  selectServiceTemplate(templateId, "deploy");
+}
+
+function openServiceTemplateCopy() {
+  pendingServiceTemplateDelete.value = null;
+  serviceTemplateCopyName.value = String(
     deployForm.serviceName || selectedServiceTemplate.value?.name || ""
-  );
+  ).trim();
+  serviceTemplateCopyError.value = "";
+  isServiceTemplateCopyOpen.value = true;
 
-  if (name === null) {
-    return;
-  }
-
-  await saveServiceTemplateFromDeploy({
-    createNew: true,
-    name,
+  void nextTick(() => {
+    serviceTemplateCopyInputRef.value?.focus();
+    serviceTemplateCopyInputRef.value?.select();
   });
 }
 
-async function removeSelectedServiceTemplate() {
+function closeServiceTemplateCopy() {
+  if (isSavingServiceTemplate.value) {
+    return;
+  }
+
+  isServiceTemplateCopyOpen.value = false;
+  serviceTemplateCopyError.value = "";
+}
+
+async function saveServiceTemplateCopy() {
+  const name = serviceTemplateCopyName.value.trim();
+
+  if (!name) {
+    serviceTemplateCopyError.value = "请输入服务模板名称";
+    serviceTemplateCopyInputRef.value?.focus();
+    return;
+  }
+
+  const saved = await saveServiceTemplateFromDeploy({
+    createNew: true,
+    name,
+  });
+
+  if (saved) {
+    isServiceTemplateCopyOpen.value = false;
+    serviceTemplateCopyError.value = "";
+    return;
+  }
+
+  serviceTemplateCopyError.value = "保存失败，请查看活动日志";
+}
+
+function removeSelectedServiceTemplate() {
   if (!selectedServiceTemplate.value) {
     return;
   }
 
-  const confirmed = window.confirm(
-    `确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`
-  );
+  isServiceTemplateCopyOpen.value = false;
+  serviceTemplateCopyError.value = "";
+  pendingServiceTemplateDelete.value = {
+    id: selectedServiceTemplateId.value,
+    name: selectedServiceTemplate.value.name,
+  };
+}
 
-  if (!confirmed) {
+function closeServiceTemplateDelete() {
+  if (!isDeletingServiceTemplate.value) {
+    pendingServiceTemplateDelete.value = null;
+  }
+}
+
+async function confirmServiceTemplateDelete() {
+  const target = pendingServiceTemplateDelete.value;
+
+  if (!target || isDeletingServiceTemplate.value) {
     return;
   }
 
-  await deleteServiceTemplate(selectedServiceTemplateId.value);
+  isDeletingServiceTemplate.value = true;
+
+  try {
+    await deleteServiceTemplate(target.id);
+    pendingServiceTemplateDelete.value = null;
+  } finally {
+    isDeletingServiceTemplate.value = false;
+  }
+}
+
+function canInteractWithPackageDropzone() {
+  return hasDeploymentBridge.value && !isDeploying.value;
+}
+
+function handlePackageDragEnter(event) {
+  if (!canInteractWithPackageDropzone()) {
+    return;
+  }
+
+  packageDragDepth += 1;
+  isPackageDragActive.value = true;
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+}
+
+function handlePackageDragOver(event) {
+  if (canInteractWithPackageDropzone() && event.dataTransfer) {
+    event.dataTransfer.dropEffect = "copy";
+  }
+}
+
+function handlePackageDragLeave() {
+  packageDragDepth = Math.max(0, packageDragDepth - 1);
+
+  if (packageDragDepth === 0) {
+    isPackageDragActive.value = false;
+  }
+}
+
+async function handlePackageDrop(event) {
+  packageDragDepth = 0;
+  isPackageDragActive.value = false;
+  packageDropError.value = "";
+
+  if (!canInteractWithPackageDropzone()) {
+    return;
+  }
+
+  const files = Array.from(event.dataTransfer?.files || []);
+
+  if (files.length !== 1) {
+    packageDropError.value =
+      files.length > 1 ? "一次只能拖入一个镜像包" : "没有读取到拖入的文件";
+    return;
+  }
+
+  const result = await selectDroppedDeployPackageFile(files[0]);
+
+  if (!result?.ok) {
+    packageDropError.value = result?.message || "无法使用这个文件";
+  }
+}
+
+async function chooseDeployPackageFile() {
+  packageDropError.value = "";
+  const result = await selectDeployPackageFile();
+
+  if (result && !result.ok && !result.canceled) {
+    packageDropError.value = result.message || "无法使用这个文件";
+  }
+}
+
+function preventWindowFileDrop(event) {
+  event.preventDefault();
 }
 
 function getFileName(filePath) {
@@ -283,7 +426,7 @@ function animateSummary() {
   }
 
   gsap.fromTo(
-    selector(".deploy-package-picker-row"),
+    selector(".deploy-package-dropzone"),
     { autoAlpha: 0.82, y: 4 },
     { autoAlpha: 1, y: 0, duration: 0.2, ease: "power3.out", overwrite: "auto" }
   );
@@ -312,6 +455,8 @@ function animateActivePackage() {
 }
 
 onMounted(() => {
+  window.addEventListener("dragover", preventWindowFileDrop);
+  window.addEventListener("drop", preventWindowFileDrop);
   loadServiceTemplates();
   refreshDeployPreview();
 
@@ -320,7 +465,7 @@ onMounted(() => {
   }
 
   deployGsapContext = gsap.context(() => {
-    gsap.from(".deploy-package-picker-row", {
+    gsap.from(".deploy-package-dropzone", {
       autoAlpha: 0,
       y: 8,
       duration: 0.24,
@@ -339,6 +484,8 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  window.removeEventListener("dragover", preventWindowFileDrop);
+  window.removeEventListener("drop", preventWindowFileDrop);
   deployGsapContext?.revert();
 });
 
@@ -385,6 +532,13 @@ watch(isAdvancedOpen, async (isOpen) => {
     }
   );
 });
+
+watch(
+  () => deployForm.localPackagePath,
+  () => {
+    packageDropError.value = "";
+  }
+);
 </script>
 
 <template>
@@ -421,13 +575,17 @@ watch(isAdvancedOpen, async (isOpen) => {
               <AppSelect
                 :model-value="selectedServiceTemplateId"
                 :options="serviceTemplateSelectOptions"
-                :disabled="!hasServiceTemplateBridge"
-                @change="selectServiceTemplate($event, 'deploy')"
+                :disabled="!hasServiceTemplateBridge || isDeletingServiceTemplate"
+                @change="changeServiceTemplate"
               />
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                :disabled="
+                  !hasServiceTemplateBridge ||
+                  isSavingServiceTemplate ||
+                  isDeletingServiceTemplate
+                "
                 @click="saveCurrentServiceTemplate"
               >
                 {{ selectedServiceTemplate ? "更新服务" : "保存服务" }}
@@ -435,20 +593,79 @@ watch(isAdvancedOpen, async (isOpen) => {
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
-                @click="createServiceTemplateCopy"
+                :disabled="
+                  !hasServiceTemplateBridge ||
+                  isSavingServiceTemplate ||
+                  isDeletingServiceTemplate
+                "
+                @click="openServiceTemplateCopy"
               >
                 另存
               </button>
               <button
                 v-if="selectedServiceTemplate"
                 type="button"
-                class="danger-button compact-button"
-                :disabled="isSavingServiceTemplate"
+                class="danger-button template-delete-trigger"
+                title="删除当前服务模板"
+                aria-label="删除当前服务模板"
+                :disabled="isSavingServiceTemplate || isDeletingServiceTemplate"
                 @click="removeSelectedServiceTemplate"
               >
-                删除
+                <Trash2 :size="14" aria-hidden="true" />
               </button>
+            </div>
+
+            <InlineDeleteConfirm
+              v-if="pendingServiceTemplateDelete"
+              title="删除服务模板？"
+              :message="`服务模板「${pendingServiceTemplateDelete.name}」将被永久删除，已有部署记录不会受影响。`"
+              :busy="isDeletingServiceTemplate"
+              @cancel="closeServiceTemplateDelete"
+              @confirm="confirmServiceTemplateDelete"
+            />
+
+            <div
+              v-if="isServiceTemplateCopyOpen"
+              class="service-template-copy-form"
+            >
+              <label class="field">
+                <span>新服务模板名称</span>
+                <input
+                  ref="serviceTemplateCopyInputRef"
+                  v-model="serviceTemplateCopyName"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="例如 aibox-s-prod"
+                  @input="serviceTemplateCopyError = ''"
+                  @keydown.esc.stop="closeServiceTemplateCopy"
+                  @keydown.enter.prevent="saveServiceTemplateCopy"
+                />
+                <small
+                  v-if="serviceTemplateCopyError"
+                  class="service-template-copy-error"
+                  role="alert"
+                >
+                  {{ serviceTemplateCopyError }}
+                </small>
+              </label>
+              <div class="service-template-copy-actions">
+                <button
+                  type="button"
+                  class="secondary-button compact-button"
+                  :disabled="isSavingServiceTemplate"
+                  @click="closeServiceTemplateCopy"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="primary-button compact-button"
+                  :disabled="isSavingServiceTemplate"
+                  @click="saveServiceTemplateCopy"
+                >
+                  {{ isSavingServiceTemplate ? "保存中..." : "保存副本" }}
+                </button>
+              </div>
             </div>
 
             <small class="template-description">
@@ -465,28 +682,66 @@ watch(isAdvancedOpen, async (isOpen) => {
               <span class="deploy-source-pill">{{ currentPackageSource }}</span>
             </div>
 
-            <div class="deploy-package-picker-row">
-              <label class="field fill">
-                <span>本地包路径</span>
-                <input
-                  :value="deployForm.localPackagePath || '还没有选择镜像包'"
-                  type="text"
-                  readonly
-                  :title="
-                    deployForm.localPackagePath ||
-                    '选择 tar.gz，或从最近镜像包中选择'
-                  "
-                />
-              </label>
-              <button
-                type="button"
-                class="secondary-button compact-button"
-                :disabled="!hasDeploymentBridge"
-                @click="selectDeployPackageFile"
-              >
-                更换
-              </button>
-            </div>
+            <button
+              type="button"
+              class="file-dropzone deploy-package-dropzone"
+              :class="{
+                'is-dragging': isPackageDragActive,
+                'has-file': hasDeployPackage,
+                'has-error': packageDropError,
+              }"
+              :disabled="!hasDeploymentBridge || isDeploying"
+              :aria-label="
+                hasDeployPackage
+                  ? `更换镜像包：${currentPackageFileName}`
+                  : '选择或拖入镜像包'
+              "
+              @click="chooseDeployPackageFile"
+              @dragenter.prevent.stop="handlePackageDragEnter"
+              @dragover.prevent.stop="handlePackageDragOver"
+              @dragleave.prevent.stop="handlePackageDragLeave"
+              @drop.prevent.stop="handlePackageDrop"
+            >
+              <div class="file-dropzone-icon" aria-hidden="true">
+                <UploadCloud v-if="isPackageDragActive" :size="19" />
+                <FileArchive v-else :size="19" />
+              </div>
+              <div class="file-dropzone-copy">
+                <strong>
+                  {{
+                    isPackageDragActive
+                      ? "释放以使用这个镜像包"
+                      : currentPackageFileName || "拖入镜像包"
+                  }}
+                </strong>
+                <small :title="deployForm.localPackagePath">
+                  {{
+                    isPackageDragActive
+                      ? "仅接收单个 tar.gz、tgz 或 tar 文件"
+                      : deployForm.localPackagePath ||
+                        "也可以点击此区域从本机选择"
+                  }}
+                </small>
+              </div>
+              <div class="file-dropzone-action" aria-hidden="true">
+                <Upload :size="14" />
+                <b>{{ hasDeployPackage ? "更换" : "选择" }}</b>
+              </div>
+            </button>
+            <small
+              v-if="packageDropError"
+              class="file-dropzone-message error"
+              role="alert"
+            >
+              {{ packageDropError }}
+            </small>
+            <small v-else class="file-dropzone-message">
+              {{
+                hasDeploymentBridge
+                  ? "支持拖放或点击选择镜像包"
+                  : "请通过 Electron 模式选择本地文件"
+              }}
+            </small>
           </section>
 
           <section

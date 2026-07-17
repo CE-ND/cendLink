@@ -1,11 +1,13 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { FileArchive, Trash2, Upload, UploadCloud } from '@lucide/vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { buildBaseImage, parseDockerfileText } from '../../../shared/dockerfileTemplates.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 import RunProgress from '../../workspace/components/RunProgress.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
+import InlineDeleteConfirm from '../../../components/ui/InlineDeleteConfirm.vue'
 
 // 本地镜像包生成页，负责展示 Jar -> Docker 镜像压缩包的完整流程。
 const {
@@ -20,6 +22,7 @@ const {
   isBuildingPackage,
   isSavingDockerfileTemplate,
   isSavingServiceTemplate,
+  hasElectronBridge,
   hasServiceTemplateBridge,
   canBuildImagePackage,
   packageHint,
@@ -34,6 +37,7 @@ const {
   saveDockerfileTemplate,
   deleteDockerfileTemplate,
   selectJarFile,
+  selectDroppedJarFile,
   refreshPackagePreview,
   buildImagePackage,
   openImagePackageDirectory,
@@ -67,7 +71,40 @@ const isPackageToastVisible = ref(false)
 let packageToastTimer = null
 
 const pageRef = ref(null)
+const isServiceTemplateCopyOpen = ref(false)
+const serviceTemplateCopyName = ref('')
+const serviceTemplateCopyError = ref('')
+const serviceTemplateCopyInputRef = ref(null)
+const pendingTemplateDelete = ref(null)
+const isDeletingTemplate = ref(false)
+const isJarDragActive = ref(false)
+const jarDropError = ref('')
+let jarDragDepth = 0
 usePageEntrance(pageRef)
+
+const deleteDialogTitle = computed(() => {
+  return pendingTemplateDelete.value?.type === 'dockerfile'
+    ? '删除 Dockerfile 模板？'
+    : '删除服务模板？'
+})
+
+const deleteDialogMessage = computed(() => {
+  const target = pendingTemplateDelete.value
+
+  if (!target) {
+    return ''
+  }
+
+  return target.type === 'dockerfile'
+    ? `模板「${target.name}」将从本地模板库中移除，此操作无法撤销。`
+    : `服务模板「${target.name}」将被永久删除，已生成的镜像包不会受影响。`
+})
+
+const jarFileName = computed(() => {
+  return getFileName(packageForm.jarPath)
+})
+
+const hasJarFile = computed(() => Boolean(packageForm.jarPath))
 
 const builtinTemplateOptions = computed(() => {
   return dockerfileTemplateOptions.value.filter((template) => template.sourceType === 'builtin')
@@ -307,49 +344,197 @@ async function saveDockerfileImport() {
   }
 }
 
-async function removeSelectedDockerfileTemplate() {
+function removeSelectedDockerfileTemplate() {
   if (!canDeleteSelectedCustomTemplate.value) {
     return
   }
 
-  const confirmed = window.confirm(`确定删除模板「${packageForm.dockerfileTemplateName}」吗？`)
-
-  if (!confirmed) {
-    return
+  isServiceTemplateCopyOpen.value = false
+  serviceTemplateCopyError.value = ''
+  pendingTemplateDelete.value = {
+    type: 'dockerfile',
+    id: packageForm.dockerfileTemplateId,
+    name: packageForm.dockerfileTemplateName,
   }
+}
 
-  await deleteDockerfileTemplate(packageForm.dockerfileTemplateId)
+function getFileName(filePath) {
+  const value = String(filePath || '').trim()
+  return value.split(/[\\/]/).filter(Boolean).pop() || ''
 }
 
 async function saveCurrentServiceTemplate() {
   await saveServiceTemplateFromPackage()
 }
 
-async function createServiceTemplateCopy() {
-  const name = window.prompt('服务模板名称', packageForm.serviceName || selectedServiceTemplate.value?.name || '')
+function changeServiceTemplate(templateId) {
+  pendingTemplateDelete.value = null
+  isServiceTemplateCopyOpen.value = false
+  serviceTemplateCopyError.value = ''
+  selectServiceTemplate(templateId, 'package')
+}
 
-  if (name === null) {
+function changeDockerfileTemplate(templateId) {
+  if (pendingTemplateDelete.value?.type === 'dockerfile') {
+    pendingTemplateDelete.value = null
+  }
+
+  selectDockerfileTemplate(templateId)
+}
+
+function canInteractWithJarDropzone() {
+  return hasElectronBridge.value && !isBuildingPackage.value
+}
+
+function handleJarDragEnter(event) {
+  if (!canInteractWithJarDropzone()) {
     return
   }
 
-  await saveServiceTemplateFromPackage({
-    createNew: true,
-    name,
+  jarDragDepth += 1
+  isJarDragActive.value = true
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleJarDragOver(event) {
+  if (canInteractWithJarDropzone() && event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleJarDragLeave() {
+  jarDragDepth = Math.max(0, jarDragDepth - 1)
+
+  if (jarDragDepth === 0) {
+    isJarDragActive.value = false
+  }
+}
+
+async function handleJarDrop(event) {
+  jarDragDepth = 0
+  isJarDragActive.value = false
+  jarDropError.value = ''
+
+  if (!canInteractWithJarDropzone()) {
+    return
+  }
+
+  const files = Array.from(event.dataTransfer?.files || [])
+
+  if (files.length !== 1) {
+    jarDropError.value = files.length > 1 ? '一次只能拖入一个 Jar 文件' : '没有读取到拖入的文件'
+    return
+  }
+
+  const result = await selectDroppedJarFile(files[0])
+
+  if (!result?.ok) {
+    jarDropError.value = result?.message || '无法使用这个文件'
+  }
+}
+
+async function chooseJarFile() {
+  jarDropError.value = ''
+  const result = await selectJarFile()
+
+  if (result && !result.ok && !result.canceled) {
+    jarDropError.value = result.message || '无法使用这个文件'
+  }
+}
+
+function preventWindowFileDrop(event) {
+  event.preventDefault()
+}
+
+function openServiceTemplateCopy() {
+  pendingTemplateDelete.value = null
+  serviceTemplateCopyName.value = String(
+    packageForm.serviceName || selectedServiceTemplate.value?.name || '',
+  ).trim()
+  serviceTemplateCopyError.value = ''
+  isServiceTemplateCopyOpen.value = true
+
+  void nextTick(() => {
+    serviceTemplateCopyInputRef.value?.focus()
+    serviceTemplateCopyInputRef.value?.select()
   })
 }
 
-async function removeSelectedServiceTemplate() {
+function closeServiceTemplateCopy() {
+  if (isSavingServiceTemplate.value) {
+    return
+  }
+
+  isServiceTemplateCopyOpen.value = false
+  serviceTemplateCopyError.value = ''
+}
+
+async function saveServiceTemplateCopy() {
+  const name = serviceTemplateCopyName.value.trim()
+
+  if (!name) {
+    serviceTemplateCopyError.value = '请输入服务模板名称'
+    serviceTemplateCopyInputRef.value?.focus()
+    return
+  }
+
+  const saved = await saveServiceTemplateFromPackage({
+    createNew: true,
+    name,
+  })
+
+  if (saved) {
+    isServiceTemplateCopyOpen.value = false
+    serviceTemplateCopyError.value = ''
+    return
+  }
+
+  serviceTemplateCopyError.value = '保存失败，请查看活动日志'
+}
+
+function removeSelectedServiceTemplate() {
   if (!selectedServiceTemplate.value) {
     return
   }
 
-  const confirmed = window.confirm(`确定删除服务模板「${selectedServiceTemplate.value.name}」吗？`)
+  isServiceTemplateCopyOpen.value = false
+  serviceTemplateCopyError.value = ''
+  pendingTemplateDelete.value = {
+    type: 'service',
+    id: selectedServiceTemplateId.value,
+    name: selectedServiceTemplate.value.name,
+  }
+}
 
-  if (!confirmed) {
+function closeTemplateDeleteDialog() {
+  if (!isDeletingTemplate.value) {
+    pendingTemplateDelete.value = null
+  }
+}
+
+async function confirmTemplateDelete() {
+  const target = pendingTemplateDelete.value
+
+  if (!target || isDeletingTemplate.value) {
     return
   }
 
-  await deleteServiceTemplate(selectedServiceTemplateId.value)
+  isDeletingTemplate.value = true
+
+  try {
+    if (target.type === 'dockerfile') {
+      await deleteDockerfileTemplate(target.id)
+    } else {
+      await deleteServiceTemplate(target.id)
+    }
+
+    pendingTemplateDelete.value = null
+  } finally {
+    isDeletingTemplate.value = false
+  }
 }
 
 watch(packageResult, (nextResult) => {
@@ -361,13 +546,24 @@ watch(packageResult, (nextResult) => {
   dismissPackageToast()
 })
 
+watch(
+  () => packageForm.jarPath,
+  () => {
+    jarDropError.value = ''
+  },
+)
+
 onMounted(() => {
+  window.addEventListener('dragover', preventWindowFileDrop)
+  window.addEventListener('drop', preventWindowFileDrop)
   loadServiceTemplates()
   loadDockerfileTemplates()
   refreshPackagePreview()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('dragover', preventWindowFileDrop)
+  window.removeEventListener('drop', preventWindowFileDrop)
   clearPackageToastTimer()
 })
 </script>
@@ -393,13 +589,13 @@ onBeforeUnmount(() => {
               <AppSelect
                 :model-value="selectedServiceTemplateId"
                 :options="serviceTemplateSelectOptions"
-                :disabled="!hasServiceTemplateBridge"
-                @change="selectServiceTemplate($event, 'package')"
+                :disabled="!hasServiceTemplateBridge || isDeletingTemplate"
+                @change="changeServiceTemplate"
               />
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate || isDeletingTemplate"
                 @click="saveCurrentServiceTemplate"
               >
                 {{ selectedServiceTemplate ? '更新服务' : '保存服务' }}
@@ -407,20 +603,66 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate"
-                @click="createServiceTemplateCopy"
+                :disabled="!hasServiceTemplateBridge || isSavingServiceTemplate || isDeletingTemplate"
+                @click="openServiceTemplateCopy"
               >
                 另存
               </button>
               <button
                 v-if="selectedServiceTemplate"
                 type="button"
-                class="danger-button compact-button"
-                :disabled="isSavingServiceTemplate"
+                class="danger-button template-delete-trigger"
+                title="删除当前服务模板"
+                aria-label="删除当前服务模板"
+                :disabled="isSavingServiceTemplate || isDeletingTemplate"
                 @click="removeSelectedServiceTemplate"
               >
-                删除
+                <Trash2 :size="14" aria-hidden="true" />
               </button>
+            </div>
+            <InlineDeleteConfirm
+              v-if="pendingTemplateDelete?.type === 'service'"
+              :title="deleteDialogTitle"
+              :message="deleteDialogMessage"
+              :busy="isDeletingTemplate"
+              @cancel="closeTemplateDeleteDialog"
+              @confirm="confirmTemplateDelete"
+            />
+            <div v-if="isServiceTemplateCopyOpen" class="service-template-copy-form">
+              <label class="field">
+                <span>新服务模板名称</span>
+                <input
+                  ref="serviceTemplateCopyInputRef"
+                  v-model="serviceTemplateCopyName"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="例如 aibox-s"
+                  @input="serviceTemplateCopyError = ''"
+                  @keydown.esc.stop="closeServiceTemplateCopy"
+                  @keydown.enter.prevent="saveServiceTemplateCopy"
+                />
+                <small v-if="serviceTemplateCopyError" class="service-template-copy-error" role="alert">
+                  {{ serviceTemplateCopyError }}
+                </small>
+              </label>
+              <div class="service-template-copy-actions">
+                <button
+                  type="button"
+                  class="secondary-button compact-button"
+                  :disabled="isSavingServiceTemplate"
+                  @click="closeServiceTemplateCopy"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="primary-button compact-button"
+                  :disabled="isSavingServiceTemplate"
+                  @click="saveServiceTemplateCopy"
+                >
+                  {{ isSavingServiceTemplate ? '保存中...' : '保存副本' }}
+                </button>
+              </div>
             </div>
             <small class="template-description">
               {{ selectedServiceTemplateSummary }}
@@ -433,36 +675,87 @@ onBeforeUnmount(() => {
               <AppSelect
                 :model-value="packageForm.dockerfileTemplateId"
                 :options="dockerfileSelectOptions"
-                @change="selectDockerfileTemplate"
+                :disabled="isDeletingTemplate"
+                @change="changeDockerfileTemplate"
               />
-              <button type="button" class="secondary-button" @click="openDockerfileImport">
+              <button
+                type="button"
+                class="secondary-button"
+                :disabled="isDeletingTemplate"
+                @click="openDockerfileImport"
+              >
                 导入 Dockerfile
               </button>
               <button
                 v-if="canDeleteSelectedCustomTemplate"
                 type="button"
-                class="danger-button compact-button"
+                class="danger-button template-delete-trigger"
+                title="删除当前 Dockerfile 模板"
+                aria-label="删除当前 Dockerfile 模板"
+                :disabled="isDeletingTemplate"
                 @click="removeSelectedDockerfileTemplate"
               >
-                删除模板
+                <Trash2 :size="14" aria-hidden="true" />
               </button>
             </div>
             <small class="template-description">
               {{ selectedTemplateSourceLabel }} · {{ selectedTemplateDescription || '按当前表单生成 Dockerfile' }}
             </small>
+            <InlineDeleteConfirm
+              v-if="pendingTemplateDelete?.type === 'dockerfile'"
+              :title="deleteDialogTitle"
+              :message="deleteDialogMessage"
+              :busy="isDeletingTemplate"
+              @cancel="closeTemplateDeleteDialog"
+              @confirm="confirmTemplateDelete"
+            />
           </div>
 
           <div class="field">
             <span>Jar 包</span>
-            <div class="file-input-row">
-              <input
-                :value="packageForm.jarPath"
-                type="text"
-                placeholder="请选择本地 jar 文件"
-                readonly
-              />
-              <button type="button" class="secondary-button" @click="selectJarFile">选择 Jar</button>
-            </div>
+            <button
+              type="button"
+              class="file-dropzone"
+              :class="{
+                'is-dragging': isJarDragActive,
+                'has-file': hasJarFile,
+                'has-error': jarDropError,
+              }"
+              :disabled="!hasElectronBridge || isBuildingPackage"
+              :aria-label="hasJarFile ? `替换 Jar 文件：${jarFileName}` : '选择或拖入 Jar 文件'"
+              @click="chooseJarFile"
+              @dragenter.prevent.stop="handleJarDragEnter"
+              @dragover.prevent.stop="handleJarDragOver"
+              @dragleave.prevent.stop="handleJarDragLeave"
+              @drop.prevent.stop="handleJarDrop"
+            >
+              <div class="file-dropzone-icon" aria-hidden="true">
+                <UploadCloud v-if="isJarDragActive" :size="19" />
+                <FileArchive v-else :size="19" />
+              </div>
+              <div class="file-dropzone-copy">
+                <strong>
+                  {{ isJarDragActive ? '释放以使用这个 Jar' : jarFileName || '拖入 Jar 包' }}
+                </strong>
+                <small :title="packageForm.jarPath">
+                  {{
+                    isJarDragActive
+                      ? '仅接收单个 .jar 文件'
+                      : packageForm.jarPath || '也可以点击此区域从本机选择'
+                  }}
+                </small>
+              </div>
+              <div class="file-dropzone-action" aria-hidden="true">
+                <Upload :size="14" />
+                <b>{{ hasJarFile ? '替换' : '选择' }}</b>
+              </div>
+            </button>
+            <small v-if="jarDropError" class="file-dropzone-message error" role="alert">
+              {{ jarDropError }}
+            </small>
+            <small v-else class="file-dropzone-message">
+              {{ hasElectronBridge ? '支持拖放或点击选择 .jar 文件' : '请通过 Electron 模式选择本地文件' }}
+            </small>
           </div>
 
           <div class="field-row">
@@ -796,5 +1089,6 @@ onBeforeUnmount(() => {
         </footer>
       </section>
     </div>
+
   </div>
 </template>

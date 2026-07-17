@@ -36,8 +36,9 @@ const { theme, toggleTheme, setTheme } = useTheme()
 const pageEyebrow = computed(() => route.meta.eyebrow || 'Workspace')
 const pageTitle = computed(() => route.meta.title || '远程工作区')
 const isTerminalHiddenRoute = computed(() => (
-  ['servers', 'package', 'deploy', 'frontend', 'containers', 'nginx-config', 'commands', 'history'].includes(route.name)
+  ['servers', 'package', 'deploy', 'frontend', 'files', 'containers', 'nginx-config', 'commands', 'history'].includes(route.name)
 ))
+const isImmersiveWorkspaceRoute = computed(() => route.name === 'files')
 // 判断 preload 桥是否可用，用于提示当前是 Electron 模式还是浏览器预览。
 const bridgeStatusText = computed(() => {
   return hasElectronBridge.value ? 'Electron 已连接' : '浏览器预览'
@@ -154,8 +155,14 @@ onBeforeUnmount(() => {
     />
 
     <div class="app-page-frame">
-      <section class="workspace" :class="{ 'workspace-terminal-hidden': isTerminalHiddenRoute }">
-        <header class="workspace-header">
+      <section
+        class="workspace"
+        :class="{
+          'workspace-terminal-hidden': isTerminalHiddenRoute,
+          'workspace-immersive': isImmersiveWorkspaceRoute,
+        }"
+      >
+        <header v-if="!isImmersiveWorkspaceRoute" class="workspace-header">
           <div>
             <p class="eyebrow">{{ pageEyebrow }}</p>
             <h2>{{ pageTitle }}</h2>

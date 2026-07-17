@@ -4,6 +4,7 @@ import { getDatabase } from '../index.js'
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
+const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
 
 export async function listFrontendProjects() {
   const db = await getDatabase()
@@ -37,13 +38,15 @@ export async function saveFrontendProject(input = {}) {
         extract_strategy,
         keep_remote_archive,
         entry_file,
+        restart_nginx,
+        nginx_restart_command,
         last_package_path,
         last_uploaded_at,
         last_server_id,
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         project_dir = excluded.project_dir,
@@ -53,6 +56,8 @@ export async function saveFrontendProject(input = {}) {
         extract_strategy = excluded.extract_strategy,
         keep_remote_archive = excluded.keep_remote_archive,
         entry_file = excluded.entry_file,
+        restart_nginx = excluded.restart_nginx,
+        nginx_restart_command = excluded.nginx_restart_command,
         last_package_path = excluded.last_package_path,
         last_uploaded_at = excluded.last_uploaded_at,
         last_server_id = excluded.last_server_id,
@@ -68,6 +73,8 @@ export async function saveFrontendProject(input = {}) {
     normalized.extractStrategy,
     normalized.keepRemoteArchive ? 1 : 0,
     normalized.entryFile,
+    normalized.restartNginx ? 1 : 0,
+    normalized.nginxRestartCommand,
     normalized.lastPackagePath,
     normalized.lastUploadedAt,
     normalized.lastServerId,
@@ -111,6 +118,8 @@ function normalizeFrontendProjectInput(input, now) {
     extractStrategy: normalizeExtractStrategy(input.extractStrategy),
     keepRemoteArchive: Boolean(input.keepRemoteArchive),
     entryFile: normalizeEntryFile(input.entryFile),
+    restartNginx: Boolean(input.restartNginx),
+    nginxRestartCommand: normalizeRestartCommand(input.nginxRestartCommand),
     lastPackagePath: String(input.lastPackagePath || input.localArchivePath || '').trim(),
     lastUploadedAt: input.lastUploadedAt ? String(input.lastUploadedAt) : null,
     lastServerId: input.lastServerId ? String(input.lastServerId) : null,
@@ -130,6 +139,8 @@ function mapFrontendProjectRow(row) {
     extractStrategy: row.extract_strategy,
     keepRemoteArchive: Boolean(row.keep_remote_archive),
     entryFile: row.entry_file,
+    restartNginx: Boolean(row.restart_nginx),
+    nginxRestartCommand: row.nginx_restart_command || DEFAULT_NGINX_RESTART_COMMAND,
     lastPackagePath: row.last_package_path,
     lastUploadedAt: row.last_uploaded_at,
     lastServerId: row.last_server_id,
@@ -163,6 +174,11 @@ function normalizeExtractStrategy(value) {
 function normalizeEntryFile(value) {
   const normalized = String(value || DEFAULT_ENTRY_FILE).trim().replace(/^\/+/, '')
   return normalized && !normalized.includes('..') ? normalized : DEFAULT_ENTRY_FILE
+}
+
+function normalizeRestartCommand(value) {
+  const command = String(value ?? DEFAULT_NGINX_RESTART_COMMAND).trim()
+  return command.replace(/[\r\n\0]+/g, ' ').slice(0, 500)
 }
 
 function joinUnix(...parts) {

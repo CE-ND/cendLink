@@ -1,10 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { FileArchive, RefreshCw, Trash2, Upload, UploadCloud } from '@lucide/vue'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 import RunProgress from '../../workspace/components/RunProgress.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
+import InlineDeleteConfirm from '../../../components/ui/InlineDeleteConfirm.vue'
 
 const {
   savedServers,
@@ -27,6 +29,7 @@ const {
   saveFrontendProjectFromForm,
   deleteFrontendProject,
   selectFrontendArchiveFile,
+  selectDroppedFrontendArchiveFile,
   refreshFrontendUploadPreview,
   runFrontendUpload,
 } = useWorkspaceSession()
@@ -34,13 +37,22 @@ const {
 const emit = defineEmits(['open-logs'])
 
 // 前端上传管线的锚定步骤（名称与 frontendUploadRunner 的 runStep 一致）。
-const FRONTEND_STAGES = [
+const BASE_FRONTEND_STAGES = [
   { key: 'precheck', label: '远程预检' },
   { key: 'upload', label: '上传压缩包' },
   { key: 'publish', label: '解压并发布' },
 ]
 
 const pageRef = ref(null)
+const isProjectCopyOpen = ref(false)
+const projectCopyName = ref('')
+const projectCopyError = ref('')
+const projectCopyInputRef = ref(null)
+const pendingProjectDelete = ref(null)
+const isDeletingProject = ref(false)
+const isArchiveDragActive = ref(false)
+const archiveDropError = ref('')
+let archiveDragDepth = 0
 usePageEntrance(pageRef)
 
 const extractStrategyOptions = [
@@ -75,6 +87,8 @@ const currentArchiveFileName = computed(() => {
   return getFileName(frontendForm.localArchivePath)
 })
 
+const hasFrontendArchive = computed(() => Boolean(frontendForm.localArchivePath))
+
 const selectedProjectSummary = computed(() => {
   if (!hasFrontendProjectBridge.value) {
     return '前端项目能力需要重启桌面窗口后生效'
@@ -92,11 +106,26 @@ const strategyLabel = computed(() => {
   return extractStrategyOptions.find((item) => item.value === frontendForm.extractStrategy)?.label || '清空覆盖'
 })
 
+const frontendStages = computed(() => {
+  return frontendForm.restartNginx
+    ? [...BASE_FRONTEND_STAGES, { key: 'restart', label: '重启 Nginx' }]
+    : BASE_FRONTEND_STAGES
+})
+
+const nginxResultLabel = computed(() => {
+  if (!frontendUploadResult.value?.restartNginx) {
+    return '未执行'
+  }
+
+  return frontendUploadResult.value.nginxRestarted ? '已重启' : '重启失败'
+})
+
 const uploadSummaryItems = computed(() => {
   return [
     { label: '目标', value: selectedServer.value ? selectedServer.value.name : '未选择' },
     { label: '项目目录', value: frontendForm.projectDir || '-' },
     { label: '发布策略', value: strategyLabel.value },
+    { label: 'Nginx', value: frontendForm.restartNginx ? '发布后重启' : '不重启' },
   ]
 })
 
@@ -104,31 +133,161 @@ function saveCurrentFrontendProject() {
   return saveFrontendProjectFromForm()
 }
 
-async function createFrontendProjectCopy() {
-  const name = window.prompt('前端项目名称', frontendForm.projectName || selectedFrontendProject.value?.name || '')
+function changeFrontendProject(projectId) {
+  pendingProjectDelete.value = null
+  isProjectCopyOpen.value = false
+  projectCopyError.value = ''
+  selectFrontendProject(projectId)
+}
 
-  if (name === null) {
-    return
-  }
+function openFrontendProjectCopy() {
+  pendingProjectDelete.value = null
+  projectCopyName.value = String(
+    frontendForm.projectName || selectedFrontendProject.value?.name || '',
+  ).trim()
+  projectCopyError.value = ''
+  isProjectCopyOpen.value = true
 
-  await saveFrontendProjectFromForm({
-    createNew: true,
-    name,
+  void nextTick(() => {
+    projectCopyInputRef.value?.focus()
+    projectCopyInputRef.value?.select()
   })
 }
 
-async function removeSelectedFrontendProject() {
+function closeFrontendProjectCopy() {
+  if (isSavingFrontendProject.value) {
+    return
+  }
+
+  isProjectCopyOpen.value = false
+  projectCopyError.value = ''
+}
+
+async function saveFrontendProjectCopy() {
+  const name = projectCopyName.value.trim()
+
+  if (!name) {
+    projectCopyError.value = '请输入前端项目名称'
+    projectCopyInputRef.value?.focus()
+    return
+  }
+
+  const saved = await saveFrontendProjectFromForm({
+    createNew: true,
+    name,
+  })
+
+  if (saved) {
+    isProjectCopyOpen.value = false
+    projectCopyError.value = ''
+    return
+  }
+
+  projectCopyError.value = '保存失败，请查看活动日志'
+}
+
+function removeSelectedFrontendProject() {
   if (!selectedFrontendProject.value) {
     return
   }
 
-  const confirmed = window.confirm(`确定删除前端项目「${selectedFrontendProject.value.name}」吗？`)
+  isProjectCopyOpen.value = false
+  projectCopyError.value = ''
+  pendingProjectDelete.value = {
+    id: selectedFrontendProjectId.value,
+    name: selectedFrontendProject.value.name,
+  }
+}
 
-  if (!confirmed) {
+function closeFrontendProjectDelete() {
+  if (!isDeletingProject.value) {
+    pendingProjectDelete.value = null
+  }
+}
+
+async function confirmFrontendProjectDelete() {
+  const target = pendingProjectDelete.value
+
+  if (!target || isDeletingProject.value) {
     return
   }
 
-  await deleteFrontendProject(selectedFrontendProjectId.value)
+  isDeletingProject.value = true
+
+  try {
+    await deleteFrontendProject(target.id)
+    pendingProjectDelete.value = null
+  } finally {
+    isDeletingProject.value = false
+  }
+}
+
+function canInteractWithArchiveDropzone() {
+  return hasFrontendUploadBridge.value && !isUploadingFrontend.value
+}
+
+function handleArchiveDragEnter(event) {
+  if (!canInteractWithArchiveDropzone()) {
+    return
+  }
+
+  archiveDragDepth += 1
+  isArchiveDragActive.value = true
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleArchiveDragOver(event) {
+  if (canInteractWithArchiveDropzone() && event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'copy'
+  }
+}
+
+function handleArchiveDragLeave() {
+  archiveDragDepth = Math.max(0, archiveDragDepth - 1)
+
+  if (archiveDragDepth === 0) {
+    isArchiveDragActive.value = false
+  }
+}
+
+async function handleArchiveDrop(event) {
+  archiveDragDepth = 0
+  isArchiveDragActive.value = false
+  archiveDropError.value = ''
+
+  if (!canInteractWithArchiveDropzone()) {
+    return
+  }
+
+  const files = Array.from(event.dataTransfer?.files || [])
+
+  if (files.length !== 1) {
+    archiveDropError.value =
+      files.length > 1 ? '一次只能拖入一个前端压缩包' : '没有读取到拖入的文件'
+    return
+  }
+
+  const result = await selectDroppedFrontendArchiveFile(files[0])
+
+  if (!result?.ok) {
+    archiveDropError.value = result?.message || '无法使用这个文件'
+  }
+}
+
+async function chooseFrontendArchiveFile() {
+  archiveDropError.value = ''
+  const result = await selectFrontendArchiveFile()
+
+  if (result && !result.ok && !result.canceled) {
+    archiveDropError.value = result.message || '无法使用这个文件'
+  }
+}
+
+function preventWindowFileDrop(event) {
+  event.preventDefault()
 }
 
 function getFileName(filePath) {
@@ -161,9 +320,23 @@ function formatRecordTime(value) {
 }
 
 onMounted(() => {
+  window.addEventListener('dragover', preventWindowFileDrop)
+  window.addEventListener('drop', preventWindowFileDrop)
   loadFrontendProjects()
   refreshFrontendUploadPreview()
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('dragover', preventWindowFileDrop)
+  window.removeEventListener('drop', preventWindowFileDrop)
+})
+
+watch(
+  () => frontendForm.localArchivePath,
+  () => {
+    archiveDropError.value = ''
+  },
+)
 </script>
 
 <template>
@@ -200,13 +373,17 @@ onMounted(() => {
               <AppSelect
                 :model-value="selectedFrontendProjectId"
                 :options="frontendProjectOptions"
-                :disabled="!hasFrontendProjectBridge"
-                @change="selectFrontendProject($event)"
+                :disabled="!hasFrontendProjectBridge || isDeletingProject"
+                @change="changeFrontendProject"
               />
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasFrontendProjectBridge || isSavingFrontendProject"
+                :disabled="
+                  !hasFrontendProjectBridge ||
+                  isSavingFrontendProject ||
+                  isDeletingProject
+                "
                 @click="saveCurrentFrontendProject"
               >
                 {{ selectedFrontendProject ? '更新项目' : '保存项目' }}
@@ -214,20 +391,76 @@ onMounted(() => {
               <button
                 type="button"
                 class="secondary-button compact-button"
-                :disabled="!hasFrontendProjectBridge || isSavingFrontendProject"
-                @click="createFrontendProjectCopy"
+                :disabled="
+                  !hasFrontendProjectBridge ||
+                  isSavingFrontendProject ||
+                  isDeletingProject
+                "
+                @click="openFrontendProjectCopy"
               >
                 另存
               </button>
               <button
                 v-if="selectedFrontendProject"
                 type="button"
-                class="danger-button compact-button"
-                :disabled="isSavingFrontendProject"
+                class="danger-button template-delete-trigger"
+                title="删除当前前端项目"
+                aria-label="删除当前前端项目"
+                :disabled="isSavingFrontendProject || isDeletingProject"
                 @click="removeSelectedFrontendProject"
               >
-                删除
+                <Trash2 :size="14" aria-hidden="true" />
               </button>
+            </div>
+
+            <InlineDeleteConfirm
+              v-if="pendingProjectDelete"
+              title="删除前端项目？"
+              :message="`前端项目「${pendingProjectDelete.name}」将从本地项目库中移除，已上传的远程文件不会受影响。`"
+              :busy="isDeletingProject"
+              @cancel="closeFrontendProjectDelete"
+              @confirm="confirmFrontendProjectDelete"
+            />
+
+            <div v-if="isProjectCopyOpen" class="service-template-copy-form">
+              <label class="field">
+                <span>新前端项目名称</span>
+                <input
+                  ref="projectCopyInputRef"
+                  v-model="projectCopyName"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="例如 console-web-staging"
+                  @input="projectCopyError = ''"
+                  @keydown.esc.stop="closeFrontendProjectCopy"
+                  @keydown.enter.prevent="saveFrontendProjectCopy"
+                />
+                <small
+                  v-if="projectCopyError"
+                  class="service-template-copy-error"
+                  role="alert"
+                >
+                  {{ projectCopyError }}
+                </small>
+              </label>
+              <div class="service-template-copy-actions">
+                <button
+                  type="button"
+                  class="secondary-button compact-button"
+                  :disabled="isSavingFrontendProject"
+                  @click="closeFrontendProjectCopy"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  class="primary-button compact-button"
+                  :disabled="isSavingFrontendProject"
+                  @click="saveFrontendProjectCopy"
+                >
+                  {{ isSavingFrontendProject ? '保存中...' : '保存副本' }}
+                </button>
+              </div>
             </div>
 
             <small class="template-description">
@@ -235,41 +468,75 @@ onMounted(() => {
             </small>
           </section>
 
-          <div class="deploy-package-summary frontend-archive-summary" :class="{ empty: !frontendForm.localArchivePath }">
-            <div class="deploy-summary-head">
-              <span class="field-prompt">当前压缩包</span>
-              <span class="deploy-source-pill">前端构建产物</span>
-            </div>
-
-            <div class="deploy-summary-main">
-              <strong :title="currentArchiveFileName">{{ currentArchiveFileName || '还没有选择前端压缩包' }}</strong>
-              <small :title="frontendForm.localArchivePath">
-                {{ frontendForm.localArchivePath || '支持 zip、tar、tar.gz、tgz' }}
-              </small>
-            </div>
-
-            <div class="deploy-summary-footer">
-              <div class="deploy-summary-metrics">
-                <span>
-                  <small>项目</small>
-                  <b :title="frontendForm.projectName">{{ frontendForm.projectName || '-' }}</b>
-                </span>
-                <span>
-                  <small>入口</small>
-                  <b>{{ frontendForm.entryFile || 'index.html' }}</b>
-                </span>
+          <section class="deploy-section frontend-archive-section">
+            <div class="deploy-section-header">
+              <div>
+                <span class="field-prompt">前端压缩包</span>
+                <strong>构建产物</strong>
               </div>
-
-              <button
-                type="button"
-                class="secondary-button compact-button"
-                :disabled="!hasFrontendUploadBridge"
-                @click="selectFrontendArchiveFile"
-              >
-                选择
-              </button>
+              <span class="deploy-source-pill">zip / tar</span>
             </div>
-          </div>
+
+            <button
+              type="button"
+              class="file-dropzone frontend-archive-dropzone"
+              :class="{
+                'is-dragging': isArchiveDragActive,
+                'has-file': hasFrontendArchive,
+                'has-error': archiveDropError,
+              }"
+              :disabled="!hasFrontendUploadBridge || isUploadingFrontend"
+              :aria-label="
+                hasFrontendArchive
+                  ? `更换前端压缩包：${currentArchiveFileName}`
+                  : '选择或拖入前端压缩包'
+              "
+              @click="chooseFrontendArchiveFile"
+              @dragenter.prevent.stop="handleArchiveDragEnter"
+              @dragover.prevent.stop="handleArchiveDragOver"
+              @dragleave.prevent.stop="handleArchiveDragLeave"
+              @drop.prevent.stop="handleArchiveDrop"
+            >
+              <div class="file-dropzone-icon" aria-hidden="true">
+                <UploadCloud v-if="isArchiveDragActive" :size="19" />
+                <FileArchive v-else :size="19" />
+              </div>
+              <div class="file-dropzone-copy">
+                <strong>
+                  {{
+                    isArchiveDragActive
+                      ? '释放以上传这个压缩包'
+                      : currentArchiveFileName || '拖入前端压缩包'
+                  }}
+                </strong>
+                <small :title="frontendForm.localArchivePath">
+                  {{
+                    isArchiveDragActive
+                      ? '仅接收单个 zip、tar、tar.gz 或 tgz 文件'
+                      : frontendForm.localArchivePath || '也可以点击此区域从本机选择'
+                  }}
+                </small>
+              </div>
+              <div class="file-dropzone-action" aria-hidden="true">
+                <Upload :size="14" />
+                <b>{{ hasFrontendArchive ? '更换' : '选择' }}</b>
+              </div>
+            </button>
+            <small
+              v-if="archiveDropError"
+              class="file-dropzone-message error"
+              role="alert"
+            >
+              {{ archiveDropError }}
+            </small>
+            <small v-else class="file-dropzone-message">
+              {{
+                hasFrontendUploadBridge
+                  ? '支持拖放或点击选择前端压缩包'
+                  : '请通过 Electron 模式选择本地文件'
+              }}
+            </small>
+          </section>
 
           <section class="deploy-section deploy-target-section">
             <div class="deploy-section-header">
@@ -385,6 +652,55 @@ onMounted(() => {
               </label>
             </div>
           </section>
+
+          <section class="deploy-section frontend-nginx-section">
+            <div class="deploy-section-header">
+              <div>
+                <span class="field-prompt">发布后动作</span>
+                <strong>Nginx 服务</strong>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              class="frontend-restart-control"
+              :class="{ active: frontendForm.restartNginx }"
+              role="switch"
+              :aria-checked="frontendForm.restartNginx"
+              :disabled="isUploadingFrontend"
+              @click="updateFrontendForm({ restartNginx: !frontendForm.restartNginx })"
+            >
+              <span class="frontend-restart-icon" aria-hidden="true">
+                <RefreshCw :size="17" :stroke-width="2.1" />
+              </span>
+              <span class="frontend-restart-copy">
+                <strong>发布完成后重启 Nginx</strong>
+                <small>{{ frontendForm.restartNginx ? '将在文件发布成功后执行' : '本次发布不会重启服务' }}</small>
+              </span>
+              <span class="frontend-restart-track" aria-hidden="true"><i></i></span>
+            </button>
+
+            <label
+              v-if="frontendForm.restartNginx"
+              class="field frontend-restart-command"
+              :class="{ 'is-invalid': !frontendForm.nginxRestartCommand.trim() }"
+            >
+              <span>重启命令</span>
+              <input
+                :value="frontendForm.nginxRestartCommand"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="systemctl restart nginx"
+                :aria-invalid="!frontendForm.nginxRestartCommand.trim()"
+                :disabled="isUploadingFrontend"
+                @input="updateFrontendForm({ nginxRestartCommand: $event.target.value })"
+              />
+              <small v-if="!frontendForm.nginxRestartCommand.trim()" role="alert">
+                启用后需要填写重启命令
+              </small>
+            </label>
+          </section>
         </div>
 
         <div class="package-actions deploy-actions">
@@ -485,6 +801,10 @@ onMounted(() => {
                 <dt>入口文件</dt>
                 <dd>{{ frontendForm.entryFile || 'index.html' }}</dd>
               </div>
+              <div class="preview-row">
+                <dt>Nginx 重启</dt>
+                <dd>{{ frontendForm.restartNginx ? '已启用' : '未启用' }}</dd>
+              </div>
             </dl>
           </section>
         </div>
@@ -517,6 +837,20 @@ onMounted(() => {
               <pre><code>{{ frontendUploadPreview?.publishCommand || '等待选择前端压缩包' }}</code></pre>
             </div>
           </div>
+
+          <div v-if="frontendForm.restartNginx" class="preview-command">
+            <div class="preview-group-head">
+              <p class="preview-group-title">Nginx 重启</p>
+              <CopyButton
+                v-if="frontendUploadPreview?.restartCommand"
+                :value="frontendUploadPreview.restartCommand"
+                label="复制重启命令"
+              />
+            </div>
+            <div class="command-panel">
+              <pre><code>{{ frontendUploadPreview?.restartCommand || frontendForm.nginxRestartCommand || '等待填写重启命令' }}</code></pre>
+            </div>
+          </div>
         </section>
       </div>
 
@@ -524,12 +858,13 @@ onMounted(() => {
         <RunProgress
           :active="isUploadingFrontend"
           :result="frontendUploadResult"
-          :stages="FRONTEND_STAGES"
-          running-text="正在上传并发布前端包…"
+          :stages="frontendStages"
+          :running-text="frontendForm.restartNginx ? '正在发布前端包并重启 Nginx…' : '正在上传并发布前端包…'"
         />
         <div v-if="frontendUploadResult && !isUploadingFrontend" class="command-meta">
           <span class="command-stat">文件: {{ frontendUploadResult.publishedFileCount || 0 }}</span>
           <span class="command-stat">备份: {{ frontendUploadResult.backupDir || '-' }}</span>
+          <span class="command-stat">Nginx: {{ nginxResultLabel }}</span>
         </div>
       </div>
     </section>

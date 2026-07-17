@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { registerDeploymentHandlers } from '../ipc/deployment.handlers.js'
 import { registerDockerHandlers } from '../ipc/docker.handlers.js'
 import { registerFrontendUploadHandlers } from '../ipc/frontendUpload.handlers.js'
+import { registerRemoteFileHandlers } from '../ipc/remoteFiles.handlers.js'
 import { registerSshHandlers } from '../ipc/ssh.handlers.js'
 import { registerStorageHandlers } from '../ipc/storage.handlers.js'
 import { bindWindowStateEvents, registerWindowHandlers } from '../ipc/window.handlers.js'
@@ -68,6 +69,7 @@ app.whenReady().then(async () => {
   registerDeploymentHandlers(ipcMain)
   registerDockerHandlers(ipcMain)
   registerFrontendUploadHandlers(ipcMain)
+  registerRemoteFileHandlers(ipcMain)
   registerSshHandlers(ipcMain)
   registerStorageHandlers(ipcMain)
   registerWindowHandlers(ipcMain)

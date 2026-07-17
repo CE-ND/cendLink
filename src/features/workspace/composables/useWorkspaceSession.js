@@ -15,6 +15,9 @@ const MAX_COMMAND_TIMEOUT_SECONDS = 600
 const DEFAULT_FRONTEND_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_FRONTEND_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_FRONTEND_ENTRY_FILE = 'index.html'
+const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
+const DEPLOY_PACKAGE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar)$/i
+const FRONTEND_ARCHIVE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar|zip)$/i
 
 // 渲染进程共享会话状态。各个页面通过它复用 SSH 上下文，避免切页后状态丢失。
 function createDefaultServerForm() {
@@ -105,6 +108,8 @@ const frontendForm = reactive({
   extractStrategy: 'clean',
   keepRemoteArchive: false,
   entryFile: DEFAULT_FRONTEND_ENTRY_FILE,
+  restartNginx: true,
+  nginxRestartCommand: DEFAULT_NGINX_RESTART_COMMAND,
 })
 // 镜像包预览配置。
 const packagePreview = ref(null)
@@ -362,6 +367,7 @@ const canUploadFrontend = computed(() => {
       frontendForm.projectDir.trim() &&
       frontendForm.remoteBaseDir.trim() &&
       frontendForm.remoteTargetDir.trim() &&
+      (!frontendForm.restartNginx || frontendForm.nginxRestartCommand.trim()) &&
       !isUploadingFrontend.value,
   )
 })
@@ -458,11 +464,17 @@ const frontendUploadHint = computed(() => {
     return '请选择前端构建后的压缩包，支持 zip、tar、tar.gz、tgz。'
   }
 
+  if (frontendForm.restartNginx && !frontendForm.nginxRestartCommand.trim()) {
+    return '已启用 Nginx 重启，请填写重启命令。'
+  }
+
   if (isUploadingFrontend.value) {
     return '前端上传执行中，请等待服务器返回结果。'
   }
 
-  return '会先上传压缩包，再在远程临时目录解压校验，最后发布到 Nginx 项目目录。'
+  return frontendForm.restartNginx
+    ? '会先上传并解压前端包，发布完成后执行 Nginx 重启命令。'
+    : '会先上传压缩包，再在远程临时目录解压校验，最后发布到 Nginx 项目目录。'
 })
 
 /**
@@ -717,7 +729,13 @@ async function saveServiceTemplateFromPackage(options = {}) {
     deployConfig: existing?.deployConfig || deriveDeployConfigFromPackage(),
   })
 
-  return saveServiceTemplatePayload(payload, '服务打包模板已保存')
+  const successMessage = options.createNew
+    ? '服务模板副本已另存'
+    : existing
+      ? '服务打包模板已更新'
+      : '服务打包模板已保存'
+
+  return saveServiceTemplatePayload(payload, successMessage)
 }
 
 /**
@@ -732,7 +750,13 @@ async function saveServiceTemplateFromDeploy(options = {}) {
     deployConfig: readDeployTemplateConfig(),
   })
 
-  return saveServiceTemplatePayload(payload, '服务部署模板已保存')
+  const successMessage = options.createNew
+    ? '服务模板副本已另存'
+    : existing
+      ? '服务部署模板已更新'
+      : '服务部署模板已保存'
+
+  return saveServiceTemplatePayload(payload, successMessage)
 }
 
 /**
@@ -774,7 +798,13 @@ async function saveFrontendProjectFromForm(options = {}) {
     name: options.name,
   })
 
-  return saveFrontendProjectPayload(payload, existing ? '前端项目已更新' : '前端项目已保存')
+  const successMessage = options.createNew
+    ? '前端项目副本已另存'
+    : existing
+      ? '前端项目已更新'
+      : '前端项目已保存'
+
+  return saveFrontendProjectPayload(payload, successMessage)
 }
 
 async function deleteFrontendProject(projectId = selectedFrontendProjectId.value) {
@@ -830,6 +860,8 @@ function buildFrontendProjectPayload(existing, overrides = {}) {
     extractStrategy: config.extractStrategy,
     keepRemoteArchive: config.keepRemoteArchive,
     entryFile: config.entryFile,
+    restartNginx: config.restartNginx,
+    nginxRestartCommand: config.nginxRestartCommand,
     lastPackagePath: String(overrides.lastPackagePath ?? existing?.lastPackagePath ?? config.lastPackagePath ?? ''),
     lastUploadedAt: overrides.lastUploadedAt ?? existing?.lastUploadedAt ?? null,
     lastServerId: overrides.lastServerId ?? existing?.lastServerId ?? activeServerId.value ?? null,
@@ -1108,19 +1140,70 @@ async function selectJarFile() {
 
   if (!docker?.selectJarFile) {
     logs.value.push(logLine('当前是浏览器预览模式，无法打开 Jar 文件选择器'))
-    return
+    return { ok: false, message: '当前是浏览器预览模式，无法打开 Jar 文件选择器' }
   }
 
   const selected = await docker.selectJarFile()
 
   if (selected?.canceled || !selected?.filePath) {
     logs.value.push(logLine('已取消选择 Jar 文件'))
-    return
+    return { ok: false, canceled: true }
   }
 
-  updatePackageForm({ jarPath: selected.filePath })
-  logs.value.push(logLine(`已选择 Jar 文件: ${selected.filePath}`))
+  return applyJarFilePath(selected.filePath, '已选择 Jar 文件')
+}
+
+/**
+ * 接收从桌面拖入的文件，并通过 preload 的 webUtils 解析真实路径。
+ * Electron 32+ 不再允许直接读取 File.path，因此不能在 Vue 层自行猜路径。
+ */
+async function selectDroppedJarFile(file) {
+  const fileName = String(file?.name || '').trim()
+
+  if (!fileName) {
+    return { ok: false, message: '没有读取到拖入的文件' }
+  }
+
+  if (!/\.jar$/i.test(fileName)) {
+    const message = '仅支持拖入 .jar 文件'
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  const filesBridge = getStorageBridge()?.files
+  let filePath = ''
+
+  try {
+    filePath = String(filesBridge?.getPathForFile?.(file) || file.path || '').trim()
+  } catch (error) {
+    const message = `无法读取拖入文件路径: ${error?.message || error}`
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  if (!filePath) {
+    const message = '当前 Electron 进程不支持拖入文件，请重启桌面窗口后再试'
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  return applyJarFilePath(filePath, '已拖入 Jar 文件')
+}
+
+async function applyJarFilePath(filePath, successPrefix) {
+  const normalizedPath = String(filePath || '').trim()
+
+  if (!/\.jar$/i.test(normalizedPath)) {
+    const message = '请选择 .jar 文件'
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  updatePackageForm({ jarPath: normalizedPath })
+  logs.value.push(logLine(`${successPrefix}: ${normalizedPath}`))
   await refreshPackagePreview()
+
+  return { ok: true, filePath: normalizedPath }
 }
 
 /**
@@ -1131,19 +1214,17 @@ async function selectDeployPackageFile() {
 
   if (!deployment?.selectPackageFile) {
     logs.value.push(logLine('当前是浏览器预览模式，无法打开镜像包选择器'))
-    return
+    return { ok: false, message: '当前是浏览器预览模式，无法打开镜像包选择器' }
   }
 
   const selected = await deployment.selectPackageFile()
 
   if (selected?.canceled || !selected?.filePath) {
     logs.value.push(logLine('已取消选择镜像包'))
-    return
+    return { ok: false, canceled: true }
   }
 
-  applyDeployPackageSelection(selected.filePath)
-  logs.value.push(logLine(`已选择镜像包: ${selected.filePath}`))
-  await refreshDeployPreview()
+  return applyDeployPackageFilePath(selected.filePath, '已选择镜像包')
 }
 
 async function selectFrontendArchiveFile() {
@@ -1151,19 +1232,109 @@ async function selectFrontendArchiveFile() {
 
   if (!frontendUpload?.selectArchiveFile) {
     logs.value.push(logLine('当前是浏览器预览模式，无法打开前端压缩包选择器'))
-    return
+    return { ok: false, message: '当前是浏览器预览模式，无法打开前端压缩包选择器' }
   }
 
   const selected = await frontendUpload.selectArchiveFile()
 
   if (selected?.canceled || !selected?.filePath) {
     logs.value.push(logLine('已取消选择前端压缩包'))
-    return
+    return { ok: false, canceled: true }
   }
 
-  updateFrontendForm({ localArchivePath: selected.filePath })
-  logs.value.push(logLine(`已选择前端压缩包: ${selected.filePath}`))
+  return applyFrontendArchiveFilePath(selected.filePath, '已选择前端压缩包')
+}
+
+async function selectDroppedDeployPackageFile(file) {
+  const result = resolveDroppedFilePath(
+    file,
+    DEPLOY_PACKAGE_FILE_PATTERN,
+    '仅支持拖入 tar.gz、tgz 或 tar 镜像包',
+  )
+
+  if (!result.ok) {
+    logs.value.push(logLine(result.message))
+    return result
+  }
+
+  return applyDeployPackageFilePath(result.filePath, '已拖入镜像包')
+}
+
+async function selectDroppedFrontendArchiveFile(file) {
+  const result = resolveDroppedFilePath(
+    file,
+    FRONTEND_ARCHIVE_FILE_PATTERN,
+    '仅支持拖入 zip、tar、tar.gz 或 tgz 压缩包',
+  )
+
+  if (!result.ok) {
+    logs.value.push(logLine(result.message))
+    return result
+  }
+
+  return applyFrontendArchiveFilePath(result.filePath, '已拖入前端压缩包')
+}
+
+function resolveDroppedFilePath(file, acceptedPattern, invalidMessage) {
+  const fileName = String(file?.name || '').trim()
+
+  if (!fileName) {
+    return { ok: false, message: '没有读取到拖入的文件' }
+  }
+
+  if (!acceptedPattern.test(fileName)) {
+    return { ok: false, message: invalidMessage }
+  }
+
+  const filesBridge = getStorageBridge()?.files
+  let filePath = ''
+
+  try {
+    filePath = String(filesBridge?.getPathForFile?.(file) || file.path || '').trim()
+  } catch (error) {
+    return { ok: false, message: `无法读取拖入文件路径: ${error?.message || error}` }
+  }
+
+  if (!filePath) {
+    return {
+      ok: false,
+      message: '当前 Electron 进程不支持拖入文件，请重启桌面窗口后再试',
+    }
+  }
+
+  return { ok: true, filePath }
+}
+
+async function applyDeployPackageFilePath(filePath, successPrefix) {
+  const normalizedPath = String(filePath || '').trim()
+
+  if (!DEPLOY_PACKAGE_FILE_PATTERN.test(normalizedPath)) {
+    const message = '请选择 tar.gz、tgz 或 tar 镜像包'
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  applyDeployPackageSelection(normalizedPath)
+  logs.value.push(logLine(`${successPrefix}: ${normalizedPath}`))
+  await refreshDeployPreview()
+
+  return { ok: true, filePath: normalizedPath }
+}
+
+async function applyFrontendArchiveFilePath(filePath, successPrefix) {
+  const normalizedPath = String(filePath || '').trim()
+
+  if (!FRONTEND_ARCHIVE_FILE_PATTERN.test(normalizedPath)) {
+    const message = '请选择 zip、tar、tar.gz 或 tgz 前端压缩包'
+    logs.value.push(logLine(message))
+    return { ok: false, message }
+  }
+
+  updateFrontendForm({ localArchivePath: normalizedPath })
+  logs.value.push(logLine(`${successPrefix}: ${normalizedPath}`))
   await refreshFrontendUploadPreview()
+
+  return { ok: true, filePath: normalizedPath }
 }
 
 /**
@@ -2096,6 +2267,10 @@ function applyFrontendProject(project) {
     extractStrategy: String(project.extractStrategy || frontendForm.extractStrategy),
     keepRemoteArchive: Boolean(project.keepRemoteArchive),
     entryFile: String(project.entryFile || frontendForm.entryFile || DEFAULT_FRONTEND_ENTRY_FILE),
+    restartNginx: Boolean(project.restartNginx),
+    nginxRestartCommand: String(
+      project.nginxRestartCommand || frontendForm.nginxRestartCommand || DEFAULT_NGINX_RESTART_COMMAND,
+    ),
   })
 }
 
@@ -2262,6 +2437,8 @@ function readFrontendProjectConfig() {
     extractStrategy: frontendForm.extractStrategy,
     keepRemoteArchive: Boolean(frontendForm.keepRemoteArchive),
     entryFile: frontendForm.entryFile,
+    restartNginx: Boolean(frontendForm.restartNginx),
+    nginxRestartCommand: frontendForm.nginxRestartCommand,
     lastPackagePath: frontendForm.localArchivePath,
   }
 }
@@ -2277,6 +2454,8 @@ function toFrontendUploadPayload() {
     extractStrategy: frontendForm.extractStrategy,
     keepRemoteArchive: Boolean(frontendForm.keepRemoteArchive),
     entryFile: frontendForm.entryFile,
+    restartNginx: Boolean(frontendForm.restartNginx),
+    nginxRestartCommand: frontendForm.nginxRestartCommand,
   }
 }
 
@@ -2699,8 +2878,11 @@ export function useWorkspaceSession() {
     loadServiceTemplates,
     loadFrontendProjects,
     selectJarFile,
+    selectDroppedJarFile,
     selectDeployPackageFile,
+    selectDroppedDeployPackageFile,
     selectFrontendArchiveFile,
+    selectDroppedFrontendArchiveFile,
     refreshPackagePreview,
     refreshDeployPreview,
     refreshFrontendUploadPreview,

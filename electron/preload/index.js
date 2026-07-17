@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 // 暴露给 Vue 渲染进程的安全 API。渲染层只能通过这些方法访问主进程能力。
 const api = {
@@ -34,6 +34,45 @@ const api = {
     },
     openStorageDir() {
       return ipcRenderer.invoke('data:open-storage-dir')
+    },
+  },
+  // 把渲染层拖入的 File 转换为本机绝对路径；Electron 32+ 不再提供 file.path。
+  files: {
+    getPathForFile(file) {
+      return webUtils.getPathForFile(file)
+    },
+  },
+  remoteFiles: {
+    list(connection, path = '/') {
+      return ipcRenderer.invoke('remote-files:list', { connection, path })
+    },
+    selectUploadFiles() {
+      return ipcRenderer.invoke('remote-files:select-upload-files')
+    },
+    upload(connection, input) {
+      return ipcRenderer.invoke('remote-files:upload', { connection, ...input })
+    },
+    createDirectory(connection, input) {
+      return ipcRenderer.invoke('remote-files:create-directory', { connection, ...input })
+    },
+    rename(connection, input) {
+      return ipcRenderer.invoke('remote-files:rename', { connection, ...input })
+    },
+    delete(connection, paths, serverKey = '') {
+      return ipcRenderer.invoke('remote-files:delete', { connection, paths, serverKey })
+    },
+    download(connection, remotePath) {
+      return ipcRenderer.invoke('remote-files:download', { connection, remotePath })
+    },
+    listAnnotations(serverKey, paths) {
+      return ipcRenderer.invoke('remote-files:list-annotations', { serverKey, paths })
+    },
+    saveAnnotation(serverKey, remotePath, annotation) {
+      return ipcRenderer.invoke('remote-files:save-annotation', {
+        serverKey,
+        remotePath,
+        annotation,
+      })
     },
   },
   // 本地 Docker 镜像包构建能力：选择 Jar、预览配置、执行打包。

@@ -8,6 +8,7 @@ const { Client } = ssh2
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
+const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
 const FRONTEND_SOURCE_MARKER = '__CENDLINK_FRONTEND_SOURCE__='
 const FRONTEND_BACKUP_MARKER = '__CENDLINK_FRONTEND_BACKUP__='
 const FRONTEND_FILE_COUNT_MARKER = '__CENDLINK_FRONTEND_FILE_COUNT__='
@@ -18,6 +19,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
   const normalized = await normalizeFrontendUploadInput(uploadInput, { requireLocalArchive: true })
   const logs = []
   const steps = []
+  let publishedOutput = null
 
   appendLog(logs, `开始上传前端项目 ${normalized.projectName} -> ${normalized.remoteTargetDir}`)
 
@@ -58,12 +60,24 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       },
     })
 
-    const parsedOutput = parsePublishOutput(publishResult.stdout)
+    publishedOutput = parsePublishOutput(publishResult.stdout)
+
+    if (normalized.restartNginx) {
+      await runStep({
+        logs,
+        steps,
+        name: '重启 Nginx',
+        command: normalized.nginxRestartCommand,
+        runner: async () => {
+          return execCommand(client, normalized.nginxRestartCommand)
+        },
+      })
+    }
 
     return {
       ok: true,
       status: 'success',
-      message: '前端上传成功',
+      message: normalized.restartNginx ? '前端上传成功，Nginx 已重启' : '前端上传成功',
       projectName: normalized.projectName,
       projectDir: normalized.projectDir,
       localArchivePath: normalized.localArchivePath,
@@ -74,9 +88,12 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       extractStrategy: normalized.extractStrategy,
       keepRemoteArchive: normalized.keepRemoteArchive,
       entryFile: normalized.entryFile,
-      publishedSourceDir: parsedOutput.sourceDir,
-      backupDir: parsedOutput.backupDir,
-      publishedFileCount: parsedOutput.fileCount,
+      restartNginx: normalized.restartNginx,
+      nginxRestartCommand: normalized.nginxRestartCommand,
+      nginxRestarted: normalized.restartNginx,
+      publishedSourceDir: publishedOutput.sourceDir,
+      backupDir: publishedOutput.backupDir,
+      publishedFileCount: publishedOutput.fileCount,
       steps,
       logs,
       durationMs: Date.now() - startedAt,
@@ -85,12 +102,17 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       uploadConfig: normalized,
     }
   } catch (error) {
-    appendLog(logs, error?.message || String(error))
+    const rawMessage = error?.message || String(error)
+    const message = publishedOutput && normalized.restartNginx
+      ? `前端文件已发布，但 Nginx 重启失败: ${rawMessage}`
+      : rawMessage
+
+    appendLog(logs, message)
 
     return {
       ok: false,
       status: 'failed',
-      message: error?.message || '前端上传失败',
+      message: message || '前端上传失败',
       projectName: normalized.projectName,
       projectDir: normalized.projectDir,
       localArchivePath: normalized.localArchivePath,
@@ -101,9 +123,12 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       extractStrategy: normalized.extractStrategy,
       keepRemoteArchive: normalized.keepRemoteArchive,
       entryFile: normalized.entryFile,
-      publishedSourceDir: '',
-      backupDir: '',
-      publishedFileCount: 0,
+      restartNginx: normalized.restartNginx,
+      nginxRestartCommand: normalized.nginxRestartCommand,
+      nginxRestarted: false,
+      publishedSourceDir: publishedOutput?.sourceDir || '',
+      backupDir: publishedOutput?.backupDir || '',
+      publishedFileCount: publishedOutput?.fileCount || 0,
       steps,
       logs,
       durationMs: Date.now() - startedAt,
@@ -123,6 +148,7 @@ export async function previewFrontendUpload(uploadInput = {}) {
     ...normalized,
     precheckCommand: buildPrecheckCommand(normalized),
     publishCommand: buildPublishLogCommand(normalized),
+    restartCommand: normalized.restartNginx ? normalized.nginxRestartCommand : '',
   }
 }
 
@@ -136,6 +162,8 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
   const extractStrategy = normalizeExtractStrategy(input.extractStrategy)
   const keepRemoteArchive = Boolean(input.keepRemoteArchive)
   const entryFile = normalizeEntryFile(input.entryFile)
+  const restartNginx = Boolean(input.restartNginx)
+  const nginxRestartCommand = normalizeRestartCommand(input.nginxRestartCommand)
   const localArchiveName = localArchivePath ? path.basename(localArchivePath) : ''
   const archiveType = localArchivePath ? getArchiveType(localArchiveName) : ''
   const remoteArchivePath = localArchiveName
@@ -147,6 +175,10 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
   }
 
   ensureSafeRemoteTarget(remoteBaseDir, remoteTargetDir)
+
+  if (restartNginx && !nginxRestartCommand) {
+    throw new Error('请填写 Nginx 重启命令')
+  }
 
   if (localArchivePath || options.requireLocalArchive) {
     if (!localArchivePath) {
@@ -177,7 +209,23 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
     extractStrategy,
     keepRemoteArchive,
     entryFile,
+    restartNginx,
+    nginxRestartCommand,
   }
+}
+
+function normalizeRestartCommand(value) {
+  const command = String(value ?? DEFAULT_NGINX_RESTART_COMMAND).trim()
+
+  if (/[\r\n\0]/.test(command)) {
+    throw new Error('Nginx 重启命令只能填写单行命令')
+  }
+
+  if (command.length > 500) {
+    throw new Error('Nginx 重启命令不能超过 500 个字符')
+  }
+
+  return command
 }
 
 function buildPrecheckCommand(config) {
