@@ -7,6 +7,12 @@ import {
   getDockerfileTemplateDefaults,
   parseDockerfileText,
 } from '../../../shared/dockerfileTemplates.js'
+import {
+  DEFAULT_DOCKER_NETWORK,
+  DEFAULT_NGINX_CONTAINER_NAME,
+  buildDockerNginxPublishCommand,
+  resolveDockerNetworkConfig,
+} from '../../../shared/nginxDeployment.js'
 import { buildServerMetricsCommand, parseServerMetrics } from '../../connections/utils/serverMetrics.js'
 
 const DEFAULT_COMMAND_TIMEOUT_SECONDS = 60
@@ -15,7 +21,7 @@ const MAX_COMMAND_TIMEOUT_SECONDS = 600
 const DEFAULT_FRONTEND_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_FRONTEND_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_FRONTEND_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
+const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
 const DEPLOY_PACKAGE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar)$/i
 const FRONTEND_ARCHIVE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar|zip)$/i
 
@@ -92,6 +98,9 @@ const deployForm = reactive({
   remoteBaseDir: '/mnt/temp_check',
   remotePackageDir: '/opt/cendlink/packages',
   restartPolicy: 'unless-stopped',
+  networkName: DEFAULT_DOCKER_NETWORK,
+  nginxProxyCheckEnabled: true,
+  nginxContainerName: DEFAULT_NGINX_CONTAINER_NAME,
   envText: 'SPRING_PROFILES_ACTIVE=prod\nTZ=Asia/Shanghai',
   extraArgs: '',
   containerConflictStrategy: 'auto',
@@ -138,7 +147,11 @@ const isSavingServer = ref(false)
 const isSavingDockerfileTemplate = ref(false)
 // 保存服务模板进行中状态。
 const isSavingServiceTemplate = ref(false)
+// 最近一次服务模板保存错误，供当前操作页面显示明确反馈。
+const serviceTemplateSaveError = ref('')
 const isSavingFrontendProject = ref(false)
+// 最近一次前端项目保存错误，供上传页面显示明确反馈。
+const frontendProjectSaveError = ref('')
 // 删除部署记录进行中状态。
 const deletingDeploymentIds = ref([])
 // 本地数据库中已保存的服务器列表。
@@ -349,6 +362,8 @@ const canDeploy = computed(() => {
       deployForm.containerName.trim() &&
       deployForm.imageName.trim() &&
       deployForm.imageTag.trim() &&
+      deployForm.networkName.trim() &&
+      (!deployForm.nginxProxyCheckEnabled || deployForm.nginxContainerName.trim()) &&
       Number.isInteger(Number(deployForm.hostPort || 0)) &&
       Number(deployForm.hostPort || 0) > 0 &&
       Number.isInteger(Number(deployForm.containerPort || 0)) &&
@@ -436,6 +451,14 @@ const deployHint = computed(() => {
     return '请选择一个镜像包 tar.gz，或先在镜像打包页生成本地包。'
   }
 
+  if (!deployForm.networkName.trim()) {
+    return '请填写 Docker 网络。'
+  }
+
+  if (deployForm.nginxProxyCheckEnabled && !deployForm.nginxContainerName.trim()) {
+    return '已启用 Nginx 代理检查，请填写 Nginx 容器名。'
+  }
+
   if (isDeploying.value) {
     return '部署执行中，请等待服务器返回结果。'
   }
@@ -465,7 +488,7 @@ const frontendUploadHint = computed(() => {
   }
 
   if (frontendForm.restartNginx && !frontendForm.nginxRestartCommand.trim()) {
-    return '已启用 Nginx 重启，请填写重启命令。'
+    return '已启用 Nginx 发布后动作，请填写执行命令。'
   }
 
   if (isUploadingFrontend.value) {
@@ -473,7 +496,7 @@ const frontendUploadHint = computed(() => {
   }
 
   return frontendForm.restartNginx
-    ? '会先上传并解压前端包，发布完成后执行 Nginx 重启命令。'
+    ? '会先上传并解压前端包，发布完成后执行 Nginx 发布后命令。'
     : '会先上传压缩包，再在远程临时目录解压校验，最后发布到 Nginx 项目目录。'
 })
 
@@ -725,6 +748,7 @@ async function saveServiceTemplateFromPackage(options = {}) {
   const payload = buildServiceTemplatePayload(existing, {
     name: options.name,
     description: options.description,
+    serviceName: packageForm.serviceName,
     packageConfig: readPackageTemplateConfig(),
     deployConfig: existing?.deployConfig || deriveDeployConfigFromPackage(),
   })
@@ -746,6 +770,7 @@ async function saveServiceTemplateFromDeploy(options = {}) {
   const payload = buildServiceTemplatePayload(existing, {
     name: options.name,
     description: options.description,
+    serviceName: deployForm.serviceName,
     packageConfig: existing?.packageConfig || derivePackageConfigFromDeploy(),
     deployConfig: readDeployTemplateConfig(),
   })
@@ -795,7 +820,7 @@ async function deleteServiceTemplate(templateId = selectedServiceTemplateId.valu
 async function saveFrontendProjectFromForm(options = {}) {
   const existing = getFrontendProjectForSave(options)
   const payload = buildFrontendProjectPayload(existing, {
-    name: options.name,
+    name: options.name || frontendForm.projectName,
   })
 
   const successMessage = options.createNew
@@ -846,7 +871,7 @@ function getFrontendProjectForSave(options = {}) {
   return frontendProjects.value.find((project) => project.id === targetId) || null
 }
 
-function buildFrontendProjectPayload(existing, overrides = {}) {
+export function buildFrontendProjectPayload(existing, overrides = {}) {
   const config = readFrontendProjectConfig()
   const name = String(overrides.name || existing?.name || config.name || '').trim() || '未命名前端项目'
 
@@ -871,14 +896,17 @@ function buildFrontendProjectPayload(existing, overrides = {}) {
 
 async function saveFrontendProjectPayload(payload, successMessage) {
   const bridge = getStorageBridge()
+  frontendProjectSaveError.value = ''
 
   if (!bridge?.frontendProjects?.save) {
-    logs.value.push(logLine('当前 Electron 进程还没有前端项目能力，请重启桌面窗口后再试'))
+    frontendProjectSaveError.value = '当前 Electron 进程还没有前端项目能力，请重启桌面窗口后再试'
+    logs.value.push(logLine(frontendProjectSaveError.value))
     return null
   }
 
   if (!payload.name || !payload.projectDir) {
-    logs.value.push(logLine('保存前端项目前请先填写项目名称和项目目录'))
+    frontendProjectSaveError.value = '保存前端项目前请先填写项目名称和项目目录'
+    logs.value.push(logLine(frontendProjectSaveError.value))
     return null
   }
 
@@ -891,7 +919,8 @@ async function saveFrontendProjectPayload(payload, successMessage) {
     logs.value.push(logLine(`${successMessage}: ${saved.name}`))
     return saved
   } catch (error) {
-    logs.value.push(logLine(`保存前端项目失败: ${error?.message || error}`))
+    frontendProjectSaveError.value = `保存前端项目失败: ${error?.message || error}`
+    logs.value.push(logLine(frontendProjectSaveError.value))
     return null
   } finally {
     isSavingFrontendProject.value = false
@@ -910,6 +939,7 @@ async function syncFrontendUploadResultToProject(response) {
   }
 
   const payload = buildFrontendProjectPayload(existing, {
+    name: frontendForm.projectName,
     lastPackagePath: response.localArchivePath || frontendForm.localArchivePath,
     lastUploadedAt: response.finishedAt || new Date().toISOString(),
     lastServerId: activeServerId.value || existing.lastServerId || null,
@@ -2113,6 +2143,12 @@ async function recordRemoteDeployment(response) {
       runCommand: response.runCommand,
       cleanupCommand: response.cleanupCommand,
       cleanupSummary: response.cleanupSummary,
+      networkName: response.networkName,
+      nginxProxyCheckEnabled: response.nginxProxyCheckEnabled,
+      nginxContainerName: response.nginxContainerName,
+      nginxProxyTarget: response.nginxProxyTarget,
+      warnings: response.warnings || [],
+      nginxDiagnostics: response.nginxDiagnostics || null,
       durationMs: response.durationMs,
       startedAt: response.startedAt,
       finishedAt: response.finishedAt,
@@ -2223,6 +2259,10 @@ function applyServiceTemplateToPackage(template) {
 
 function applyServiceTemplateToDeploy(template) {
   const config = template?.deployConfig || {}
+  const networkConfig = resolveDockerNetworkConfig({
+    networkName: config.networkName,
+    extraArgs: config.extraArgs,
+  })
   const serviceName = String(config.serviceName || template?.serviceName || deployForm.serviceName)
   const imageTag = String(template?.lastImageTag || config.imageTag || deployForm.imageTag)
   const serviceVersion = String(template?.lastPackageVersion || config.serviceVersion || imageTag)
@@ -2241,8 +2281,13 @@ function applyServiceTemplateToDeploy(template) {
     remoteBaseDir: String(config.remoteBaseDir || deployForm.remoteBaseDir),
     remotePackageDir: String(config.remotePackageDir || deployForm.remotePackageDir),
     restartPolicy: String(config.restartPolicy || deployForm.restartPolicy),
+    networkName: networkConfig.networkName,
+    nginxProxyCheckEnabled: config.nginxProxyCheckEnabled !== false,
+    nginxContainerName: String(
+      config.nginxContainerName || deployForm.nginxContainerName || DEFAULT_NGINX_CONTAINER_NAME,
+    ),
     envText: String(config.envText || deployForm.envText),
-    extraArgs: String(config.extraArgs || deployForm.extraArgs || ''),
+    extraArgs: String(networkConfig.extraArgs || ''),
     containerConflictStrategy: String(config.containerConflictStrategy || deployForm.containerConflictStrategy),
     imageCleanupStrategy: String(config.imageCleanupStrategy || deployForm.imageCleanupStrategy),
     directoryPermissionMode: String(config.directoryPermissionMode || deployForm.directoryPermissionMode),
@@ -2283,10 +2328,13 @@ function getServiceTemplateForSave(options = {}) {
   return serviceTemplates.value.find((template) => template.id === targetId) || null
 }
 
-function buildServiceTemplatePayload(existing, overrides = {}) {
-  const packageConfig = overrides.packageConfig || existing?.packageConfig || {}
-  const deployConfig = overrides.deployConfig || existing?.deployConfig || {}
-  const serviceName = String(packageConfig.serviceName || deployConfig.serviceName || existing?.serviceName || '').trim()
+export function buildServiceTemplatePayload(existing, overrides = {}) {
+  // Vue 列表中的模板是响应式 Proxy；IPC 只接收可结构化克隆的普通对象。
+  const packageConfig = { ...(overrides.packageConfig || existing?.packageConfig || {}) }
+  const deployConfig = { ...(overrides.deployConfig || existing?.deployConfig || {}) }
+  const serviceName = String(
+    overrides.serviceName || packageConfig.serviceName || deployConfig.serviceName || existing?.serviceName || '',
+  ).trim()
   const name = String(overrides.name || existing?.name || serviceName || '').trim() || '未命名服务模板'
 
   return {
@@ -2307,14 +2355,17 @@ function buildServiceTemplatePayload(existing, overrides = {}) {
 
 async function saveServiceTemplatePayload(payload, successMessage) {
   const bridge = getStorageBridge()
+  serviceTemplateSaveError.value = ''
 
   if (!bridge?.serviceTemplates?.save) {
-    logs.value.push(logLine('当前 Electron 进程还没有服务模板能力，请重启桌面窗口后再试'))
+    serviceTemplateSaveError.value = '当前 Electron 进程还没有服务模板能力，请重启桌面窗口后再试'
+    logs.value.push(logLine(serviceTemplateSaveError.value))
     return null
   }
 
   if (!payload.serviceName) {
-    logs.value.push(logLine('保存服务模板前请先填写服务名'))
+    serviceTemplateSaveError.value = '保存服务模板前请先填写服务名'
+    logs.value.push(logLine(serviceTemplateSaveError.value))
     return null
   }
 
@@ -2327,7 +2378,8 @@ async function saveServiceTemplatePayload(payload, successMessage) {
     logs.value.push(logLine(`${successMessage}: ${saved.name}`))
     return saved
   } catch (error) {
-    logs.value.push(logLine(`保存服务模板失败: ${error?.message || error}`))
+    serviceTemplateSaveError.value = `保存服务模板失败: ${error?.message || error}`
+    logs.value.push(logLine(serviceTemplateSaveError.value))
     return null
   } finally {
     isSavingServiceTemplate.value = false
@@ -2378,6 +2430,7 @@ async function syncDeployResultToServiceTemplate(response) {
   }
 
   const payload = buildServiceTemplatePayload(existing, {
+    serviceName: deployForm.serviceName,
     deployConfig: readDeployTemplateConfig(),
     lastDeployedAt: new Date().toISOString(),
   })
@@ -2419,6 +2472,9 @@ function readDeployTemplateConfig() {
     remoteBaseDir: deployForm.remoteBaseDir,
     remotePackageDir: deployForm.remotePackageDir,
     restartPolicy: deployForm.restartPolicy,
+    networkName: deployForm.networkName,
+    nginxProxyCheckEnabled: Boolean(deployForm.nginxProxyCheckEnabled),
+    nginxContainerName: deployForm.nginxContainerName,
     envText: deployForm.envText,
     extraArgs: deployForm.extraArgs,
     containerConflictStrategy: deployForm.containerConflictStrategy,
@@ -2774,6 +2830,9 @@ function toDeployPayload() {
     remoteBaseDir: deployForm.remoteBaseDir,
     remotePackageDir: deployForm.remotePackageDir,
     restartPolicy: deployForm.restartPolicy,
+    networkName: deployForm.networkName,
+    nginxProxyCheckEnabled: Boolean(deployForm.nginxProxyCheckEnabled),
+    nginxContainerName: deployForm.nginxContainerName,
     envVars: parseEnvText(deployForm.envText),
     extraArgs: deployForm.extraArgs,
     containerConflictStrategy: deployForm.containerConflictStrategy,
@@ -2851,7 +2910,9 @@ export function useWorkspaceSession() {
     isSavingServer,
     isSavingDockerfileTemplate,
     isSavingServiceTemplate,
+    serviceTemplateSaveError,
     isSavingFrontendProject,
+    frontendProjectSaveError,
     isSavingSettings,
     deletingDeploymentIds,
     settingsResult,

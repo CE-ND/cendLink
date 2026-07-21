@@ -72,6 +72,7 @@ const showResultSteps = computed(() => !props.active && resultSteps.value.length
 function stepStateClass(status) {
   const value = String(status || '').toLowerCase()
   if (['success', 'ok', 'done', 'passed'].includes(value)) return 'done'
+  if (['warning', 'warn'].includes(value)) return 'warning'
   if (['failed', 'error'].includes(value)) return 'failed'
   if (value === 'skipped') return 'skipped'
   return 'pending'

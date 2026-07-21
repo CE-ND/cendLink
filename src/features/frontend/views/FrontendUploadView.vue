@@ -1,6 +1,14 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { FileArchive, RefreshCw, Trash2, Upload, UploadCloud } from '@lucide/vue'
+import {
+  AlertCircle,
+  CircleCheck,
+  FileArchive,
+  RefreshCw,
+  Trash2,
+  Upload,
+  UploadCloud,
+} from '@lucide/vue'
 import AppSelect from '../../../components/ui/AppSelect.vue'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
@@ -19,6 +27,7 @@ const {
   frontendUploadResult,
   isUploadingFrontend,
   isSavingFrontendProject,
+  frontendProjectSaveError,
   canUploadFrontend,
   frontendUploadHint,
   hasFrontendUploadBridge,
@@ -48,6 +57,7 @@ const isProjectCopyOpen = ref(false)
 const projectCopyName = ref('')
 const projectCopyError = ref('')
 const projectCopyInputRef = ref(null)
+const frontendProjectSaveNotice = ref(null)
 const pendingProjectDelete = ref(null)
 const isDeletingProject = ref(false)
 const isArchiveDragActive = ref(false)
@@ -98,8 +108,17 @@ const selectedProjectSummary = computed(() => {
     return '保存后可复用该项目的 Nginx 路径和上传策略'
   }
 
-  const uploadedAt = formatRecordTime(selectedFrontendProject.value.lastUploadedAt)
-  return uploadedAt ? `最近上传 ${uploadedAt}` : '尚未记录上传'
+  const project = selectedFrontendProject.value
+  const updatedAt = formatRecordTime(project.updatedAt)
+  const strategy =
+    extractStrategyOptions.find((item) => item.value === project.extractStrategy)?.label ||
+    '清空覆盖'
+
+  return [
+    `目录 ${project.projectDir || '-'}`,
+    `策略 ${strategy}`,
+    updatedAt ? `更新 ${updatedAt}` : '尚未更新',
+  ].join(' · ')
 })
 
 const strategyLabel = computed(() => {
@@ -108,7 +127,7 @@ const strategyLabel = computed(() => {
 
 const frontendStages = computed(() => {
   return frontendForm.restartNginx
-    ? [...BASE_FRONTEND_STAGES, { key: 'restart', label: '重启 Nginx' }]
+    ? [...BASE_FRONTEND_STAGES, { key: 'restart', label: '处理 Nginx' }]
     : BASE_FRONTEND_STAGES
 })
 
@@ -117,7 +136,7 @@ const nginxResultLabel = computed(() => {
     return '未执行'
   }
 
-  return frontendUploadResult.value.nginxRestarted ? '已重启' : '重启失败'
+  return frontendUploadResult.value.nginxRestarted ? '已完成' : '执行失败'
 })
 
 const uploadSummaryItems = computed(() => {
@@ -125,15 +144,33 @@ const uploadSummaryItems = computed(() => {
     { label: '目标', value: selectedServer.value ? selectedServer.value.name : '未选择' },
     { label: '项目目录', value: frontendForm.projectDir || '-' },
     { label: '发布策略', value: strategyLabel.value },
-    { label: 'Nginx', value: frontendForm.restartNginx ? '发布后重启' : '不重启' },
+    { label: 'Nginx', value: frontendForm.restartNginx ? '执行发布后动作' : '不执行' },
   ]
 })
 
-function saveCurrentFrontendProject() {
-  return saveFrontendProjectFromForm()
+async function saveCurrentFrontendProject() {
+  frontendProjectSaveNotice.value = null
+  const isUpdating = Boolean(selectedFrontendProject.value)
+  const saved = await saveFrontendProjectFromForm()
+
+  if (!saved) {
+    frontendProjectSaveNotice.value = {
+      type: 'error',
+      message: frontendProjectSaveError.value || '前端项目保存失败，请稍后重试',
+    }
+    return
+  }
+
+  frontendProjectSaveNotice.value = {
+    type: 'success',
+    message: isUpdating
+      ? `已更新“${saved.name}”的路径与发布策略`
+      : `已保存前端项目“${saved.name}”`,
+  }
 }
 
 function changeFrontendProject(projectId) {
+  frontendProjectSaveNotice.value = null
   pendingProjectDelete.value = null
   isProjectCopyOpen.value = false
   projectCopyError.value = ''
@@ -141,6 +178,7 @@ function changeFrontendProject(projectId) {
 }
 
 function openFrontendProjectCopy() {
+  frontendProjectSaveNotice.value = null
   pendingProjectDelete.value = null
   projectCopyName.value = String(
     frontendForm.projectName || selectedFrontendProject.value?.name || '',
@@ -180,10 +218,14 @@ async function saveFrontendProjectCopy() {
   if (saved) {
     isProjectCopyOpen.value = false
     projectCopyError.value = ''
+    frontendProjectSaveNotice.value = {
+      type: 'success',
+      message: `已另存前端项目“${saved.name}”`,
+    }
     return
   }
 
-  projectCopyError.value = '保存失败，请查看活动日志'
+  projectCopyError.value = frontendProjectSaveError.value || '保存失败，请稍后重试'
 }
 
 function removeSelectedFrontendProject() {
@@ -337,6 +379,14 @@ watch(
     archiveDropError.value = ''
   },
 )
+
+watch(
+  frontendForm,
+  () => {
+    frontendProjectSaveNotice.value = null
+  },
+  { deep: true },
+)
 </script>
 
 <template>
@@ -379,6 +429,8 @@ watch(
               <button
                 type="button"
                 class="secondary-button compact-button"
+                :class="{ 'is-loading': isSavingFrontendProject }"
+                :aria-busy="isSavingFrontendProject"
                 :disabled="
                   !hasFrontendProjectBridge ||
                   isSavingFrontendProject ||
@@ -386,7 +438,20 @@ watch(
                 "
                 @click="saveCurrentFrontendProject"
               >
-                {{ selectedFrontendProject ? '更新项目' : '保存项目' }}
+                <span
+                  v-if="isSavingFrontendProject"
+                  class="btn-spinner"
+                  aria-hidden="true"
+                ></span>
+                {{
+                  isSavingFrontendProject
+                    ? selectedFrontendProject
+                      ? '更新中...'
+                      : '保存中...'
+                    : selectedFrontendProject
+                      ? '更新项目'
+                      : '保存项目'
+                }}
               </button>
               <button
                 type="button"
@@ -466,6 +531,21 @@ watch(
             <small class="template-description">
               {{ selectedProjectSummary }}
             </small>
+            <div
+              v-if="frontendProjectSaveNotice"
+              class="service-template-save-notice"
+              :class="frontendProjectSaveNotice.type"
+              :role="frontendProjectSaveNotice.type === 'error' ? 'alert' : 'status'"
+              aria-live="polite"
+            >
+              <CircleCheck
+                v-if="frontendProjectSaveNotice.type === 'success'"
+                :size="14"
+                aria-hidden="true"
+              />
+              <AlertCircle v-else :size="14" aria-hidden="true" />
+              <span>{{ frontendProjectSaveNotice.message }}</span>
+            </div>
           </section>
 
           <section class="deploy-section frontend-archive-section">
@@ -674,8 +754,8 @@ watch(
                 <RefreshCw :size="17" :stroke-width="2.1" />
               </span>
               <span class="frontend-restart-copy">
-                <strong>发布完成后重启 Nginx</strong>
-                <small>{{ frontendForm.restartNginx ? '将在文件发布成功后执行' : '本次发布不会重启服务' }}</small>
+                <strong>发布完成后处理 Nginx</strong>
+                <small>{{ frontendForm.restartNginx ? '将在文件发布成功后执行' : '本次发布不会操作 Nginx' }}</small>
               </span>
               <span class="frontend-restart-track" aria-hidden="true"><i></i></span>
             </button>
@@ -685,19 +765,19 @@ watch(
               class="field frontend-restart-command"
               :class="{ 'is-invalid': !frontendForm.nginxRestartCommand.trim() }"
             >
-              <span>重启命令</span>
+              <span>发布后命令</span>
               <input
                 :value="frontendForm.nginxRestartCommand"
                 type="text"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="systemctl restart nginx"
+                placeholder="docker exec nginx nginx -t && docker exec nginx nginx -s reload"
                 :aria-invalid="!frontendForm.nginxRestartCommand.trim()"
                 :disabled="isUploadingFrontend"
                 @input="updateFrontendForm({ nginxRestartCommand: $event.target.value })"
               />
               <small v-if="!frontendForm.nginxRestartCommand.trim()" role="alert">
-                启用后需要填写重启命令
+                启用后需要填写发布后命令
               </small>
             </label>
           </section>
@@ -802,7 +882,7 @@ watch(
                 <dd>{{ frontendForm.entryFile || 'index.html' }}</dd>
               </div>
               <div class="preview-row">
-                <dt>Nginx 重启</dt>
+                <dt>Nginx 动作</dt>
                 <dd>{{ frontendForm.restartNginx ? '已启用' : '未启用' }}</dd>
               </div>
             </dl>
@@ -840,15 +920,15 @@ watch(
 
           <div v-if="frontendForm.restartNginx" class="preview-command">
             <div class="preview-group-head">
-              <p class="preview-group-title">Nginx 重启</p>
+              <p class="preview-group-title">Nginx 发布后动作</p>
               <CopyButton
                 v-if="frontendUploadPreview?.restartCommand"
                 :value="frontendUploadPreview.restartCommand"
-                label="复制重启命令"
+                label="复制 Nginx 命令"
               />
             </div>
             <div class="command-panel">
-              <pre><code>{{ frontendUploadPreview?.restartCommand || frontendForm.nginxRestartCommand || '等待填写重启命令' }}</code></pre>
+              <pre><code>{{ frontendUploadPreview?.restartCommand || frontendForm.nginxRestartCommand || '等待填写 Nginx 命令' }}</code></pre>
             </div>
           </div>
         </section>
@@ -859,7 +939,7 @@ watch(
           :active="isUploadingFrontend"
           :result="frontendUploadResult"
           :stages="frontendStages"
-          :running-text="frontendForm.restartNginx ? '正在发布前端包并重启 Nginx…' : '正在上传并发布前端包…'"
+          :running-text="frontendForm.restartNginx ? '正在发布前端包并处理 Nginx…' : '正在上传并发布前端包…'"
         />
         <div v-if="frontendUploadResult && !isUploadingFrontend" class="command-meta">
           <span class="command-stat">文件: {{ frontendUploadResult.publishedFileCount || 0 }}</span>

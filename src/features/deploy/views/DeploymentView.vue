@@ -1,9 +1,18 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { gsap } from "gsap";
-import { FileArchive, Trash2, Upload, UploadCloud } from "@lucide/vue";
+import {
+  AlertCircle,
+  AlertTriangle,
+  CircleCheck,
+  FileArchive,
+  Trash2,
+  Upload,
+  UploadCloud,
+} from "@lucide/vue";
 import { useWorkspaceSession } from "../../workspace/composables/useWorkspaceSession.js";
 import AppSelect from "../../../components/ui/AppSelect.vue";
+import AppTooltip from "../../../components/ui/AppTooltip.vue";
 import RunProgress from "../../workspace/components/RunProgress.vue";
 import CopyButton from "../../../components/ui/CopyButton.vue";
 import InlineDeleteConfirm from "../../../components/ui/InlineDeleteConfirm.vue";
@@ -19,6 +28,7 @@ const {
   deployResult,
   isDeploying,
   isSavingServiceTemplate,
+  serviceTemplateSaveError,
   canDeploy,
   deployHint,
   hasDeploymentBridge,
@@ -40,12 +50,15 @@ const emit = defineEmits(["open-logs"]);
 // 结束后由真实 steps[] 逐条标记 success/failed。
 const DEPLOY_STAGES = [
   { key: "precheck", label: "远程预检查" },
+  { key: "network", label: "检查 Docker 网络" },
+  { key: "nginx", label: "检查 Nginx 代理" },
   { key: "port", label: "检查端口占用" },
   { key: "upload", label: "上传镜像包" },
   { key: "load", label: "导入镜像" },
   { key: "mkdir", label: "创建运行目录" },
   { key: "run", label: "启动容器" },
   { key: "inspect", label: "检查容器状态" },
+  { key: "network-verify", label: "验证容器网络" },
 ];
 
 const restartPolicyOptions = [
@@ -92,6 +105,7 @@ const isServiceTemplateCopyOpen = ref(false);
 const serviceTemplateCopyName = ref("");
 const serviceTemplateCopyError = ref("");
 const serviceTemplateCopyInputRef = ref(null);
+const serviceTemplateSaveNotice = ref(null);
 const pendingServiceTemplateDelete = ref(null);
 const isDeletingServiceTemplate = ref(false);
 const isPackageDragActive = ref(false);
@@ -142,25 +156,24 @@ const selectedServiceTemplateSummary = computed(() => {
     return "保存后可在打包和部署页复用该服务配置";
   }
 
-  const version =
-    selectedServiceTemplate.value.lastPackageVersion ||
-    selectedServiceTemplate.value.deployConfig?.serviceVersion ||
-    "-";
-  const deployedAt = formatRecordTime(
-    selectedServiceTemplate.value.lastDeployedAt
-  );
-  const packagedAt = formatRecordTime(
-    selectedServiceTemplate.value.lastPackagedAt
-  );
+  const template = selectedServiceTemplate.value;
+  const config = template.deployConfig || {};
+  const serviceName = config.serviceName || template.serviceName || template.name;
+  const hostPort = Number(config.hostPort || 0);
+  const containerPort = Number(config.containerPort || 0);
+  const updatedAt = formatRecordTime(template.updatedAt);
+  const summary = [`服务 ${serviceName}`];
 
-  return [
-    `版本 ${version}`,
-    deployedAt
-      ? `部署 ${deployedAt}`
-      : packagedAt
-      ? `打包 ${packagedAt}`
-      : "尚未记录流水",
-  ].join(" · ");
+  if (hostPort && containerPort) {
+    summary.push(`端口 ${hostPort} -> ${containerPort}`);
+  }
+
+  if (config.networkName) {
+    summary.push(`网络 ${config.networkName}`);
+  }
+
+  summary.push(updatedAt ? `更新 ${updatedAt}` : "尚未更新");
+  return summary.join(" · ");
 });
 
 const serviceTemplateSelectOptions = computed(() => {
@@ -204,10 +217,30 @@ function togglePackageHistoryOpen() {
 }
 
 async function saveCurrentServiceTemplate() {
-  await saveServiceTemplateFromDeploy();
+  serviceTemplateSaveNotice.value = null;
+  const isUpdating = Boolean(selectedServiceTemplate.value);
+  const saved = await saveServiceTemplateFromDeploy();
+
+  if (!saved) {
+    serviceTemplateSaveNotice.value = {
+      type: "error",
+      message: serviceTemplateSaveError.value || "服务配置保存失败，请稍后重试",
+    };
+    return;
+  }
+
+  const savedServiceName =
+    saved.deployConfig?.serviceName || saved.serviceName || saved.name;
+  serviceTemplateSaveNotice.value = {
+    type: "success",
+    message: isUpdating
+      ? `已更新“${saved.name}”的部署配置，服务名为 ${savedServiceName}`
+      : `已保存服务“${saved.name}”`,
+  };
 }
 
 function changeServiceTemplate(templateId) {
+  serviceTemplateSaveNotice.value = null;
   pendingServiceTemplateDelete.value = null;
   isServiceTemplateCopyOpen.value = false;
   serviceTemplateCopyError.value = "";
@@ -215,6 +248,7 @@ function changeServiceTemplate(templateId) {
 }
 
 function openServiceTemplateCopy() {
+  serviceTemplateSaveNotice.value = null;
   pendingServiceTemplateDelete.value = null;
   serviceTemplateCopyName.value = String(
     deployForm.serviceName || selectedServiceTemplate.value?.name || ""
@@ -254,10 +288,15 @@ async function saveServiceTemplateCopy() {
   if (saved) {
     isServiceTemplateCopyOpen.value = false;
     serviceTemplateCopyError.value = "";
+    serviceTemplateSaveNotice.value = {
+      type: "success",
+      message: `已另存服务“${saved.name}”`,
+    };
     return;
   }
 
-  serviceTemplateCopyError.value = "保存失败，请查看活动日志";
+  serviceTemplateCopyError.value =
+    serviceTemplateSaveError.value || "保存失败，请稍后重试";
 }
 
 function removeSelectedServiceTemplate() {
@@ -539,6 +578,14 @@ watch(
     packageDropError.value = "";
   }
 );
+
+watch(
+  deployForm,
+  () => {
+    serviceTemplateSaveNotice.value = null;
+  },
+  { deep: true }
+);
 </script>
 
 <template>
@@ -581,6 +628,8 @@ watch(
               <button
                 type="button"
                 class="secondary-button compact-button"
+                :class="{ 'is-loading': isSavingServiceTemplate }"
+                :aria-busy="isSavingServiceTemplate"
                 :disabled="
                   !hasServiceTemplateBridge ||
                   isSavingServiceTemplate ||
@@ -588,7 +637,20 @@ watch(
                 "
                 @click="saveCurrentServiceTemplate"
               >
-                {{ selectedServiceTemplate ? "更新服务" : "保存服务" }}
+                <span
+                  v-if="isSavingServiceTemplate"
+                  class="btn-spinner"
+                  aria-hidden="true"
+                ></span>
+                {{
+                  isSavingServiceTemplate
+                    ? selectedServiceTemplate
+                      ? "更新中..."
+                      : "保存中..."
+                    : selectedServiceTemplate
+                    ? "更新服务"
+                    : "保存服务"
+                }}
               </button>
               <button
                 type="button"
@@ -671,6 +733,21 @@ watch(
             <small class="template-description">
               {{ selectedServiceTemplateSummary }}
             </small>
+            <div
+              v-if="serviceTemplateSaveNotice"
+              class="service-template-save-notice"
+              :class="serviceTemplateSaveNotice.type"
+              :role="serviceTemplateSaveNotice.type === 'error' ? 'alert' : 'status'"
+              aria-live="polite"
+            >
+              <CircleCheck
+                v-if="serviceTemplateSaveNotice.type === 'success'"
+                :size="14"
+                aria-hidden="true"
+              />
+              <AlertCircle v-else :size="14" aria-hidden="true" />
+              <span>{{ serviceTemplateSaveNotice.message }}</span>
+            </div>
           </section>
 
           <section class="deploy-section deploy-package-field-section">
@@ -825,7 +902,7 @@ watch(
             <div class="deploy-section-header">
               <div>
                 <span class="field-prompt">容器运行</span>
-                <strong>名称、端口与重启</strong>
+                <strong>名称、端口与网络</strong>
               </div>
             </div>
 
@@ -852,7 +929,10 @@ watch(
 
             <div class="field-row compact-row">
               <label class="field fill">
-                <span>宿主机端口</span>
+                <AppTooltip
+                  class="field-help-label"
+                  content="服务器对外开放的端口。浏览器或其他外部客户端通过“服务器地址:宿主机端口”访问服务。"
+                >宿主机端口</AppTooltip>
                 <input
                   :value="deployForm.hostPort"
                   type="number"
@@ -864,7 +944,10 @@ watch(
                 />
               </label>
               <label class="field fill">
-                <span>容器端口</span>
+                <AppTooltip
+                  class="field-help-label"
+                  content="应用在容器内部实际监听的端口。Docker 容器之间通信以及 Nginx 代理应使用这个端口。"
+                >容器端口</AppTooltip>
                 <input
                   :value="deployForm.containerPort"
                   type="number"
@@ -878,6 +961,55 @@ watch(
                 />
               </label>
             </div>
+
+            <div class="field-row compact-row">
+              <label class="field fill">
+                <AppTooltip
+                  class="field-help-label"
+                  content="后端容器启动时加入的现有 Docker 网络。需要通过容器名互相访问的服务必须处于同一网络。"
+                >Docker 网络</AppTooltip>
+                <input
+                  :value="deployForm.networkName"
+                  type="text"
+                  @input="updateDeployForm({ networkName: $event.target.value })"
+                />
+              </label>
+              <div class="field fill">
+                <AppTooltip
+                  class="field-help-label"
+                  content="开启后，CendLink 会检查 Nginx 容器、共享网络和 proxy_pass 目标；检查结果只警告，不自动修改配置。"
+                >Nginx 代理检查</AppTooltip>
+                <button
+                  type="button"
+                  class="deploy-check-switch"
+                  :class="{ active: deployForm.nginxProxyCheckEnabled }"
+                  role="switch"
+                  :aria-checked="deployForm.nginxProxyCheckEnabled"
+                  @click="
+                    updateDeployForm({
+                      nginxProxyCheckEnabled: !deployForm.nginxProxyCheckEnabled,
+                    })
+                  "
+                >
+                  <span>{{ deployForm.nginxProxyCheckEnabled ? "已启用" : "未启用" }}</span>
+                  <span class="deploy-check-switch-track" aria-hidden="true"><i></i></span>
+                </button>
+              </div>
+            </div>
+
+            <label v-if="deployForm.nginxProxyCheckEnabled" class="field fill">
+                <AppTooltip
+                  class="field-help-label"
+                  content="要检查的 Nginx Docker 容器名称，对应 docker ps 输出中的 NAMES，不是镜像名。"
+                >Nginx 容器名</AppTooltip>
+                <input
+                  :value="deployForm.nginxContainerName"
+                  type="text"
+                  @input="
+                    updateDeployForm({ nginxContainerName: $event.target.value })
+                  "
+                />
+            </label>
           </section>
 
           <section class="deploy-section">
@@ -1023,7 +1155,7 @@ watch(
                     <input
                       :value="deployForm.extraArgs"
                       type="text"
-                      placeholder="例如 --network host"
+                      placeholder="例如 --cpus 2 --memory 1g"
                       @input="
                         updateDeployForm({ extraArgs: $event.target.value })
                       "
@@ -1154,6 +1286,34 @@ watch(
               <dt>挂载目录</dt>
               <dd>{{ mountLines.join(" | ") || "暂无" }}</dd>
             </div>
+            <div class="preview-row wide">
+              <dt>
+                <AppTooltip class="field-help-label" content="后端容器将加入的 Docker 网络。">
+                  Docker 网络
+                </AppTooltip>
+              </dt>
+              <dd class="mono">{{ deployPreview?.networkName || "-" }}</dd>
+            </div>
+            <div v-if="deployForm.nginxProxyCheckEnabled" class="preview-row wide">
+              <dt>
+                <AppTooltip
+                  class="field-help-label"
+                  content="Nginx 在 Docker 网络内访问后端时应使用的容器名和容器端口。"
+                >Nginx 代理目标</AppTooltip>
+              </dt>
+              <dd class="mono" :title="deployPreview?.nginxProxyTarget">
+                {{ deployPreview?.nginxProxyTarget || "-" }}
+              </dd>
+            </div>
+            <div class="preview-row wide">
+              <dt>
+                <AppTooltip
+                  class="field-help-label"
+                  content="关闭后仍会部署后端并检查 Docker 网络，但不会读取或诊断 Nginx 配置。"
+                >Nginx 检查</AppTooltip>
+              </dt>
+              <dd>{{ deployForm.nginxProxyCheckEnabled ? "已启用" : "未启用" }}</dd>
+            </div>
           </dl>
         </section>
 
@@ -1195,6 +1355,19 @@ watch(
           :stages="DEPLOY_STAGES"
           running-text="正在部署镜像包…"
         />
+        <div
+          v-if="deployResult?.warnings?.length"
+          class="deploy-warning-list"
+          role="status"
+        >
+          <div class="deploy-warning-head">
+            <AlertTriangle :size="16" aria-hidden="true" />
+            <strong>Nginx 检查警告</strong>
+          </div>
+          <p v-for="warning in deployResult.warnings" :key="warning.code + warning.message">
+            {{ warning.message }}
+          </p>
+        </div>
         <div v-if="deployResult && !isDeploying" class="command-meta">
           <span class="command-stat"
             >容器: {{ deployResult.containerName || "-" }}</span

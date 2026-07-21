@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import ssh2 from 'ssh2'
+import {
+  analyzeNginxProxyConfig,
+  buildNginxProxyTarget,
+  normalizeNginxContainerName,
+  resolveDockerNetworkConfig,
+} from '../../../src/shared/nginxDeployment.js'
 import { normalizeConnectionInput, toSshConfig } from '../ssh/sshClient.js'
 
 const { Client } = ssh2
@@ -32,6 +38,8 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
   const normalized = await normalizeDeploymentInput(deploymentInput)
   const logs = []
   const steps = []
+  const warnings = []
+  let nginxDiagnostics = createEmptyNginxDiagnostics(normalized)
 
   appendLog(logs, `开始部署 ${normalized.imageRef} -> ${normalized.containerName}`)
 
@@ -55,6 +63,33 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
         await execCommand(client, 'docker --version')
       },
     })
+
+    await runStep({
+      logs,
+      steps,
+      name: '检查 Docker 网络',
+      command: buildNetworkInspectCommand(normalized.networkName),
+      runner: async () => execCommand(client, buildNetworkInspectCommand(normalized.networkName)),
+    })
+
+    if (normalized.nginxProxyCheckEnabled) {
+      const diagnosticResult = await runDiagnosticStep({
+        logs,
+        steps,
+        name: '检查 Nginx 代理',
+        command: buildNginxDiagnosticLogCommand(normalized),
+        runner: async () => inspectNginxProxy(client, normalized),
+      })
+      warnings.push(...diagnosticResult.warnings)
+      nginxDiagnostics = diagnosticResult.diagnostics || nginxDiagnostics
+    } else {
+      appendSkippedStep({
+        logs,
+        steps,
+        name: '检查 Nginx 代理',
+        message: '未启用 Nginx 代理检查',
+      })
+    }
 
     await runStep({
       logs,
@@ -161,12 +196,20 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       },
     })
 
+    await runStep({
+      logs,
+      steps,
+      name: '验证容器网络',
+      command: buildContainerNetworkInspectCommand(normalized.containerName),
+      runner: async () => verifyContainerNetwork(client, normalized),
+    })
+
     const imageCleanup = await cleanupOldImages(client, normalized, resolvedImageRef, logs, steps)
 
     return {
       ok: true,
       status: 'success',
-      message: '部署成功',
+      message: warnings.length ? `部署成功，存在 ${warnings.length} 个 Nginx 警告` : '部署成功',
       imageRef: resolvedImageRef,
       containerId,
       containerName: normalized.containerName,
@@ -176,6 +219,12 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       runCommand,
       cleanupCommand: imageCleanup.command,
       cleanupSummary: imageCleanup.summary,
+      networkName: normalized.networkName,
+      nginxProxyCheckEnabled: normalized.nginxProxyCheckEnabled,
+      nginxContainerName: normalized.nginxContainerName,
+      nginxProxyTarget: normalized.nginxProxyTarget,
+      warnings,
+      nginxDiagnostics,
       steps,
       logs,
       inspectOutput: inspectResult.stdout.trim(),
@@ -200,6 +249,12 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       runCommand: buildDockerRunCommand(normalized),
       cleanupCommand: '',
       cleanupSummary: '',
+      networkName: normalized.networkName,
+      nginxProxyCheckEnabled: normalized.nginxProxyCheckEnabled,
+      nginxContainerName: normalized.nginxContainerName,
+      nginxProxyTarget: normalized.nginxProxyTarget,
+      warnings,
+      nginxDiagnostics,
       steps,
       logs,
       inspectOutput: '',
@@ -222,6 +277,7 @@ export async function previewDeployment(deploymentInput = {}) {
   return {
     ...normalized,
     runCommand: buildDockerRunCommand(normalized),
+    nginxProxyTarget: normalized.nginxProxyTarget,
     mkdirCommand: buildMkdirCommand(normalized.remoteReleaseDir, normalized.mounts),
     remotePackagePath: buildRemotePackagePath(normalized.remotePackageDir, normalized.localPackagePath),
   }
@@ -247,7 +303,19 @@ async function normalizeDeploymentInput(input = {}) {
   const restartPolicy = String(input.restartPolicy || DEFAULT_RESTART_POLICY).trim() || DEFAULT_RESTART_POLICY
   const envVars = normalizeEnvVars(input.envVars)
   const mounts = normalizeMounts(input.mounts, remoteReleaseDir)
-  const extraArgs = String(input.extraArgs || '').trim()
+  const networkConfig = resolveDockerNetworkConfig({
+    networkName: input.networkName,
+    extraArgs: input.extraArgs,
+  })
+  const networkName = networkConfig.networkName
+  const nginxProxyCheckEnabled = input.nginxProxyCheckEnabled !== false
+  const nginxContainerName = nginxProxyCheckEnabled
+    ? normalizeNginxContainerName(input.nginxContainerName)
+    : ''
+  const nginxProxyTarget = nginxProxyCheckEnabled
+    ? buildNginxProxyTarget(containerName, containerPort)
+    : ''
+  const extraArgs = networkConfig.extraArgs
   const containerConflictStrategy = normalizeContainerStrategy(input.containerConflictStrategy)
   const imageCleanupStrategy = normalizeImageCleanupStrategy(input.imageCleanupStrategy)
   const directoryPermissionMode = normalizeDirectoryPermissionMode(input.directoryPermissionMode)
@@ -292,6 +360,10 @@ async function normalizeDeploymentInput(input = {}) {
     restartPolicy,
     envVars,
     mounts,
+    networkName,
+    nginxProxyCheckEnabled,
+    nginxContainerName,
+    nginxProxyTarget,
     extraArgs,
     containerConflictStrategy,
     imageCleanupStrategy,
@@ -299,7 +371,7 @@ async function normalizeDeploymentInput(input = {}) {
   }
 }
 
-function buildDockerRunCommand(config) {
+export function buildDockerRunCommand(config) {
   const parts = [
     'docker run -d',
     `--name ${shellQuote(config.containerName)}`,
@@ -316,6 +388,10 @@ function buildDockerRunCommand(config) {
 
   if (config.restartPolicy) {
     parts.push(`--restart=${config.restartPolicy}`)
+  }
+
+  if (config.networkName) {
+    parts.push(`--network ${shellQuote(config.networkName)}`)
   }
 
   if (config.extraArgs) {
@@ -426,6 +502,227 @@ async function runStep({ logs, steps, name, command, runner }) {
     appendLog(logs, `${name} 失败: ${step.message}`)
     throw error
   }
+}
+
+async function runDiagnosticStep({ logs, steps, name, command, runner }) {
+  const startedAt = Date.now()
+  appendLog(logs, `[${name}] ${command}`)
+
+  try {
+    const result = await runner()
+    const warnings = Array.isArray(result?.warnings) ? result.warnings : []
+    const step = {
+      name,
+      status: warnings.length ? 'warning' : 'success',
+      command,
+      exitCode: 0,
+      durationMs: Date.now() - startedAt,
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      stdout: result?.stdout || '',
+      stderr: '',
+      message: warnings.length ? warnings.map((warning) => warning.message).join(' | ') : '检查通过',
+    }
+
+    steps.push(step)
+    appendLog(logs, warnings.length ? `${name} 完成，发现 ${warnings.length} 个警告` : `${name} 通过`)
+    warnings.forEach((warning) => appendLog(logs, `[警告] ${warning.message}`))
+
+    return {
+      ...result,
+      warnings,
+    }
+  } catch (error) {
+    const warning = {
+      code: 'NGINX_DIAGNOSTIC_FAILED',
+      message: `无法完成 Nginx 代理检查: ${error?.message || String(error)}`,
+    }
+    const step = {
+      name,
+      status: 'warning',
+      command,
+      exitCode: 0,
+      durationMs: Date.now() - startedAt,
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      stdout: '',
+      stderr: error?.message || String(error),
+      message: warning.message,
+    }
+
+    steps.push(step)
+    appendLog(logs, `[警告] ${warning.message}`)
+
+    return {
+      warnings: [warning],
+      diagnostics: null,
+      stdout: '',
+    }
+  }
+}
+
+function appendSkippedStep({ logs, steps, name, message }) {
+  const now = new Date().toISOString()
+  steps.push({
+    name,
+    status: 'skipped',
+    command: '',
+    exitCode: 0,
+    durationMs: 0,
+    startedAt: now,
+    finishedAt: now,
+    stdout: '',
+    stderr: '',
+    message,
+  })
+  appendLog(logs, `[${name}] ${message}`)
+}
+
+async function inspectNginxProxy(client, config) {
+  const diagnostics = createEmptyNginxDiagnostics(config)
+  const warnings = []
+  let inspectResult
+
+  try {
+    inspectResult = await execCommand(client, `docker inspect ${shellQuote(config.nginxContainerName)}`)
+  } catch {
+    warnings.push({
+      code: 'NGINX_NOT_FOUND',
+      message: `未找到 Nginx 容器 ${config.nginxContainerName}，无法校验代理配置`,
+    })
+    return buildNginxDiagnosticResult(diagnostics, warnings)
+  }
+
+  const inspect = parseDockerInspectResult(inspectResult.stdout)
+  diagnostics.containerFound = true
+  diagnostics.containerRunning = Boolean(inspect?.State?.Running)
+  diagnostics.networks = Object.keys(inspect?.NetworkSettings?.Networks || {})
+  diagnostics.sharesNetwork = diagnostics.networks.includes(config.networkName)
+
+  if (!diagnostics.containerRunning) {
+    warnings.push({
+      code: 'NGINX_NOT_RUNNING',
+      message: `Nginx 容器 ${config.nginxContainerName} 当前未运行，无法读取生效配置`,
+    })
+  }
+
+  if (!diagnostics.sharesNetwork) {
+    warnings.push({
+      code: 'NGINX_NETWORK_MISMATCH',
+      message: `Nginx 容器 ${config.nginxContainerName} 未加入网络 ${config.networkName}，无法通过容器名访问后端`,
+      expected: config.networkName,
+      actual: diagnostics.networks.join(', ') || '无网络',
+    })
+  }
+
+  if (!diagnostics.containerRunning) {
+    return buildNginxDiagnosticResult(diagnostics, warnings)
+  }
+
+  try {
+    const configResult = await execCommand(
+      client,
+      `docker exec ${shellQuote(config.nginxContainerName)} nginx -T`,
+    )
+    const nginxConfig = [configResult.stdout, configResult.stderr].filter(Boolean).join('\n')
+    const proxyAnalysis = analyzeNginxProxyConfig(nginxConfig, {
+      containerName: config.containerName,
+      containerPort: config.containerPort,
+    })
+
+    diagnostics.configReadable = true
+    diagnostics.proxy = proxyAnalysis
+
+    if (proxyAnalysis.status === 'mismatch') {
+      const actual = proxyAnalysis.mismatches
+        .map((item) => `${item.host}:${item.port}`)
+        .join(', ')
+      warnings.push({
+        code: 'NGINX_PROXY_PORT_MISMATCH',
+        message: `Nginx 正在代理 ${actual}，容器间访问应使用 ${config.containerName}:${config.containerPort}`,
+        expected: config.nginxProxyTarget,
+        actual,
+      })
+    } else if (proxyAnalysis.status === 'missing') {
+      warnings.push({
+        code: 'NGINX_PROXY_MISSING',
+        message: `Nginx 生效配置中未找到指向 ${config.containerName} 的代理规则`,
+        expected: config.nginxProxyTarget,
+      })
+    } else if (proxyAnalysis.status === 'unverifiable') {
+      warnings.push({
+        code: 'NGINX_PROXY_UNVERIFIABLE',
+        message: `Nginx 代理使用变量或无法解析的目标，请人工确认应指向 ${config.nginxProxyTarget}`,
+        expected: config.nginxProxyTarget,
+        actual: proxyAnalysis.unverifiable.join(', '),
+      })
+    }
+  } catch (error) {
+    warnings.push({
+      code: 'NGINX_CONFIG_UNREADABLE',
+      message: `无法读取 Nginx 生效配置: ${error?.message || String(error)}`,
+    })
+  }
+
+  return buildNginxDiagnosticResult(diagnostics, warnings)
+}
+
+async function verifyContainerNetwork(client, config) {
+  const command = buildContainerNetworkInspectCommand(config.containerName)
+  const result = await execCommand(client, command)
+  const networks = JSON.parse(String(result.stdout || '{}').trim() || '{}')
+
+  if (!Object.prototype.hasOwnProperty.call(networks, config.networkName)) {
+    throw new Error(`容器 ${config.containerName} 未加入目标网络 ${config.networkName}`)
+  }
+
+  return {
+    stdout: `容器 ${config.containerName} 已加入网络 ${config.networkName}；Nginx 代理目标 ${config.nginxProxyTarget}`,
+    stderr: '',
+  }
+}
+
+function createEmptyNginxDiagnostics(config) {
+  return {
+    enabled: config.nginxProxyCheckEnabled,
+    containerName: config.nginxContainerName,
+    expectedNetwork: config.networkName,
+    expectedProxyTarget: config.nginxProxyTarget,
+    containerFound: false,
+    containerRunning: false,
+    networks: [],
+    sharesNetwork: false,
+    configReadable: false,
+    proxy: null,
+  }
+}
+
+function buildNginxDiagnosticResult(diagnostics, warnings) {
+  return {
+    diagnostics,
+    warnings,
+    stdout: warnings.length
+      ? warnings.map((warning) => warning.message).join('\n')
+      : `Nginx 代理配置与 ${diagnostics.expectedProxyTarget} 一致`,
+    stderr: '',
+  }
+}
+
+function parseDockerInspectResult(output) {
+  const parsed = JSON.parse(String(output || '[]'))
+  return Array.isArray(parsed) ? parsed[0] : parsed
+}
+
+function buildNetworkInspectCommand(networkName) {
+  return `docker network inspect ${shellQuote(networkName)} --format '{{.Name}}'`
+}
+
+function buildContainerNetworkInspectCommand(containerName) {
+  return `docker inspect ${shellQuote(containerName)} --format '{{json .NetworkSettings.Networks}}'`
+}
+
+function buildNginxDiagnosticLogCommand(config) {
+  return `docker inspect ${shellQuote(config.nginxContainerName)} && docker exec ${shellQuote(config.nginxContainerName)} nginx -T`
 }
 
 async function execCommand(client, command) {

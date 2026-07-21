@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { buildDockerNginxPublishCommand } from '../../../../src/shared/nginxDeployment.js'
 import { getDatabase } from '../index.js'
 
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
+const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
 
 export async function listFrontendProjects() {
   const db = await getDatabase()

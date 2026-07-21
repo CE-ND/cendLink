@@ -8,6 +8,11 @@ import { parseNginxConfig } from '../utils/nginxConfigParser.js'
 import { diffConfigs } from '../utils/nginxConfigEditor.js'
 import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 import { useFocusTrap } from '../../../composables/useFocusTrap.js'
+import {
+  buildDockerNginxPublishCommand,
+  buildDockerNginxReloadCommand,
+  buildDockerNginxTestCommand,
+} from '../../../shared/nginxDeployment.js'
 
 const MAX_PATH_TYPE_CHECKS = 32
 const MAX_CONFIG_FILES = 16
@@ -1514,7 +1519,7 @@ async function validateConfig() {
 
   try {
     const response = await executeRemoteCommand(
-      `nginx -t -c ${shellQuote(selectedConfigFile.value.containerPath)} 2>&1`,
+      `${buildDockerNginxTestCommand(routeContainerId.value)} 2>&1`,
     )
 
     const output = [response.stdout, response.stderr].filter(Boolean).join('\n').trim()
@@ -1523,7 +1528,7 @@ async function validateConfig() {
       saveResult.value = {
         type: 'success',
         title: '语法校验通过',
-        message: output || 'nginx -t 校验成功，配置语法正确',
+        message: output || '当前 Nginx 容器的生效配置校验通过',
       }
     } else {
       saveResult.value = {
@@ -1586,15 +1591,30 @@ async function saveConfig() {
       throw new Error(`写入失败: ${writeResult.message || mergeCommandOutput(writeResult)}`)
     }
 
-    const validateResult = await executeRemoteCommand(`nginx -t 2>&1`)
+    const validateResult = await executeRemoteCommand(
+      `${buildDockerNginxTestCommand(routeContainerId.value)} 2>&1`,
+    )
     const validateOutput = [validateResult.stdout, validateResult.stderr].filter(Boolean).join('\n').trim()
 
     if (!validateResult.ok) {
-      await executeRemoteCommand(`cp ${shellQuote(backupPath)} ${shellQuote(file.hostPath)}`)
-      throw new Error(`配置语法校验失败，已回滚备份:\n${validateOutput}`)
+      const restoreResult = await executeRemoteCommand(
+        `cp ${shellQuote(backupPath)} ${shellQuote(file.hostPath)}`,
+      )
+      const recoveryTest = restoreResult.ok
+        ? await executeRemoteCommand(`${buildDockerNginxTestCommand(routeContainerId.value)} 2>&1`)
+        : null
+      const recoveryMessage = !restoreResult.ok
+        ? `恢复备份失败: ${mergeCommandOutput(restoreResult)}`
+        : recoveryTest?.ok
+          ? '已恢复备份并确认原配置有效'
+          : `已恢复备份，但原配置校验失败: ${mergeCommandOutput(recoveryTest)}`
+
+      throw new Error(`配置语法校验失败，未执行重载:\n${validateOutput}\n${recoveryMessage}`)
     }
 
-    const reloadResult = await executeRemoteCommand(`nginx -s reload 2>&1`)
+    const reloadResult = await executeRemoteCommand(
+      `${buildDockerNginxReloadCommand(routeContainerId.value)} 2>&1`,
+    )
 
     if (!reloadResult.ok) {
       saveResult.value = {
@@ -1634,7 +1654,9 @@ async function reloadNginx() {
   saveResult.value = null
 
   try {
-    const response = await executeRemoteCommand(`nginx -s reload 2>&1`)
+    const response = await executeRemoteCommand(
+      `${buildDockerNginxPublishCommand(routeContainerId.value)} 2>&1`,
+    )
     const output = [response.stdout, response.stderr].filter(Boolean).join('\n').trim()
 
     if (response.ok) {
@@ -1783,7 +1805,7 @@ function dismissSaveResult() {
                   :disabled="isValidating"
                   @click="validateConfig"
                 >
-                  {{ isValidating ? '校验中...' : '校验语法' }}
+                  {{ isValidating ? '校验中...' : '校验运行配置' }}
                 </button>
                 <button
                   class="secondary-button"

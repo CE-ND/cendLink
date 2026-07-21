@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import ssh2 from 'ssh2'
+import { buildDockerNginxPublishCommand } from '../../../src/shared/nginxDeployment.js'
 import { normalizeConnectionInput, toSshConfig } from '../ssh/sshClient.js'
 
 const { Client } = ssh2
@@ -8,7 +9,7 @@ const { Client } = ssh2
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = 'systemctl restart nginx'
+const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
 const FRONTEND_SOURCE_MARKER = '__CENDLINK_FRONTEND_SOURCE__='
 const FRONTEND_BACKUP_MARKER = '__CENDLINK_FRONTEND_BACKUP__='
 const FRONTEND_FILE_COUNT_MARKER = '__CENDLINK_FRONTEND_FILE_COUNT__='
@@ -66,7 +67,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       await runStep({
         logs,
         steps,
-        name: '重启 Nginx',
+        name: '处理 Nginx',
         command: normalized.nginxRestartCommand,
         runner: async () => {
           return execCommand(client, normalized.nginxRestartCommand)
@@ -77,7 +78,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
     return {
       ok: true,
       status: 'success',
-      message: normalized.restartNginx ? '前端上传成功，Nginx 已重启' : '前端上传成功',
+      message: normalized.restartNginx ? '前端上传成功，Nginx 发布后动作已完成' : '前端上传成功',
       projectName: normalized.projectName,
       projectDir: normalized.projectDir,
       localArchivePath: normalized.localArchivePath,
@@ -104,7 +105,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
   } catch (error) {
     const rawMessage = error?.message || String(error)
     const message = publishedOutput && normalized.restartNginx
-      ? `前端文件已发布，但 Nginx 重启失败: ${rawMessage}`
+      ? `前端文件已发布，但 Nginx 发布后动作失败: ${rawMessage}`
       : rawMessage
 
     appendLog(logs, message)
@@ -177,7 +178,7 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
   ensureSafeRemoteTarget(remoteBaseDir, remoteTargetDir)
 
   if (restartNginx && !nginxRestartCommand) {
-    throw new Error('请填写 Nginx 重启命令')
+    throw new Error('请填写 Nginx 发布后命令')
   }
 
   if (localArchivePath || options.requireLocalArchive) {
@@ -218,11 +219,11 @@ function normalizeRestartCommand(value) {
   const command = String(value ?? DEFAULT_NGINX_RESTART_COMMAND).trim()
 
   if (/[\r\n\0]/.test(command)) {
-    throw new Error('Nginx 重启命令只能填写单行命令')
+    throw new Error('Nginx 发布后命令只能填写单行命令')
   }
 
   if (command.length > 500) {
-    throw new Error('Nginx 重启命令不能超过 500 个字符')
+    throw new Error('Nginx 发布后命令不能超过 500 个字符')
   }
 
   return command
