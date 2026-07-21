@@ -11,6 +11,8 @@ node_modules
 dist
 release
 release-cend-logo
+release-update-noasar-*/
+CendLink-exe/
 dist-ssr
 *.local
 
