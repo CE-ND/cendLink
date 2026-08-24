@@ -141,6 +141,21 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       },
     })
 
+    const prepareDirectoriesCommand = buildPrepareDirectoriesCommand(
+      remoteReleaseDir,
+      normalized.mounts,
+      resolvedImageRef,
+      normalized.directoryPermissionMode,
+    )
+
+    await runStep({
+      logs,
+      steps,
+      name: '淇鎸傝浇鐩綍鏉冮檺',
+      command: prepareDirectoriesCommand,
+      runner: async () => execCommand(client, prepareDirectoriesCommand),
+    })
+
     const containerExists = await detectContainer(client, normalized.containerName)
 
     if (containerExists) {
@@ -216,6 +231,7 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       localPackagePath: normalized.localPackagePath,
       remotePackagePath,
       remoteReleaseDir,
+      prepareDirectoriesCommand,
       runCommand,
       cleanupCommand: imageCleanup.command,
       cleanupSummary: imageCleanup.summary,
@@ -246,6 +262,12 @@ export async function runDeployment(connectionInput, deploymentInput = {}) {
       localPackagePath: normalized.localPackagePath,
       remotePackagePath: '',
       remoteReleaseDir: normalized.remoteReleaseDir,
+      prepareDirectoriesCommand: buildPrepareDirectoriesCommand(
+        normalized.remoteReleaseDir,
+        normalized.mounts,
+        normalized.imageRef,
+        normalized.directoryPermissionMode,
+      ),
       runCommand: buildDockerRunCommand(normalized),
       cleanupCommand: '',
       cleanupSummary: '',
@@ -279,6 +301,12 @@ export async function previewDeployment(deploymentInput = {}) {
     runCommand: buildDockerRunCommand(normalized),
     nginxProxyTarget: normalized.nginxProxyTarget,
     mkdirCommand: buildMkdirCommand(normalized.remoteReleaseDir, normalized.mounts),
+    prepareDirectoriesCommand: buildPrepareDirectoriesCommand(
+      normalized.remoteReleaseDir,
+      normalized.mounts,
+      normalized.imageRef,
+      normalized.directoryPermissionMode,
+    ),
     remotePackagePath: buildRemotePackagePath(normalized.remotePackageDir, normalized.localPackagePath),
   }
 }
@@ -406,6 +434,30 @@ export function buildDockerRunCommand(config) {
 function buildMkdirCommand(remoteReleaseDir, mounts) {
   const directoryArgs = [remoteReleaseDir, ...mounts.map((item) => item.hostPath)].map(shellQuote)
   return `mkdir -p ${directoryArgs.join(' ')}`
+}
+
+export function buildPrepareDirectoriesCommand(
+  remoteReleaseDir,
+  _mounts,
+  imageRef,
+  directoryPermissionMode = 'none',
+) {
+  const quotedReleaseDir = shellQuote(remoteReleaseDir)
+  const quotedImageRef = shellQuote(imageRef)
+  const permissionCommand =
+    directoryPermissionMode === 'chmod777'
+      ? `chmod -R 777 ${quotedReleaseDir}`
+      : `chmod -R u+rwX ${quotedReleaseDir}`
+
+  return [
+    `runtime_uid=$(docker run --rm --entrypoint id ${quotedImageRef} -u)`,
+    `runtime_gid=$(docker run --rm --entrypoint id ${quotedImageRef} -g)`,
+    'runtime_owner="$runtime_uid:$runtime_gid"',
+    'case "$runtime_owner" in :*|*:|*[!0-9:]*|*:*:*) echo "Cannot resolve image runtime UID:GID: $runtime_owner" >&2; exit 1 ;; esac',
+    'echo "Image runtime user: $runtime_owner"',
+    `chown -R "$runtime_owner" ${quotedReleaseDir}`,
+    permissionCommand,
+  ].join('\n')
 }
 
 function buildRemotePackagePath(remotePackageDir, localPackagePath) {

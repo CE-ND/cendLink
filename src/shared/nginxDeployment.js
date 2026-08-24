@@ -1,5 +1,7 @@
 export const DEFAULT_DOCKER_NETWORK = 'proxy'
 export const DEFAULT_NGINX_CONTAINER_NAME = 'nginx'
+export const AUTO_NGINX_PUBLISH_COMMAND = 'auto'
+export const NGINX_RUNTIME_MARKER = '__CENDLINK_NGINX_RUNTIME__='
 
 const DOCKER_RESOURCE_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/
 const LEGACY_NETWORK_ARG_RE = /(?:^|\s)--(?:network|net)(?:\s*=\s*|\s+)(?:"([^"]+)"|'([^']+)'|([^\s]+))/g
@@ -63,6 +65,66 @@ export function buildDockerNginxReloadCommand(containerName = DEFAULT_NGINX_CONT
 
 export function buildDockerNginxPublishCommand(containerName = DEFAULT_NGINX_CONTAINER_NAME) {
   return `${buildDockerNginxTestCommand(containerName)} && ${buildDockerNginxReloadCommand(containerName)}`
+}
+
+export function buildSystemdNginxPublishCommand() {
+  return 'systemctl reload nginx || systemctl restart nginx'
+}
+
+export function buildAdaptiveNginxPublishCommand(containerName = DEFAULT_NGINX_CONTAINER_NAME) {
+  const normalizedName = normalizeNginxContainerName(containerName)
+  const quotedName = shellQuote(normalizedName)
+  const missingRuntimeMessage = `未检测到运行中的 Docker Nginx 容器 ${normalizedName} 或 nginx.service，请改用自定义命令`
+
+  return [
+    `if command -v docker >/dev/null 2>&1 && docker inspect -f '{{.State.Running}}' ${quotedName} 2>/dev/null | grep -qx true; then`,
+    `echo ${shellQuote(`${NGINX_RUNTIME_MARKER}docker`)};`,
+    `${buildDockerNginxPublishCommand(normalizedName)};`,
+    'elif command -v systemctl >/dev/null 2>&1 && systemctl cat nginx.service >/dev/null 2>&1; then',
+    `echo ${shellQuote(`${NGINX_RUNTIME_MARKER}systemd`)};`,
+    `${buildSystemdNginxPublishCommand()};`,
+    'else',
+    `echo ${shellQuote(missingRuntimeMessage)} >&2; exit 21;`,
+    'fi',
+  ].join(' ')
+}
+
+export function normalizeNginxPublishCommandSetting(value) {
+  const command = String(value ?? AUTO_NGINX_PUBLISH_COMMAND).trim()
+
+  if (!command) {
+    return ''
+  }
+
+  const comparable = command.replace(/['"]/g, '').replace(/\s+/g, ' ').trim()
+  const isLegacySystemdDefault = [
+    'systemctl restart nginx',
+    'systemctl restart nginx.service',
+    'sudo systemctl restart nginx',
+    'sudo systemctl restart nginx.service',
+  ].includes(comparable)
+  const isLegacyDockerDefault =
+    comparable === 'docker exec nginx nginx -t && docker exec nginx nginx -s reload'
+
+  return command === AUTO_NGINX_PUBLISH_COMMAND || isLegacySystemdDefault || isLegacyDockerDefault
+    ? AUTO_NGINX_PUBLISH_COMMAND
+    : command
+}
+
+export function isAutoNginxPublishCommand(value) {
+  return normalizeNginxPublishCommandSetting(value) === AUTO_NGINX_PUBLISH_COMMAND
+}
+
+export function resolveNginxPublishCommand(value, containerName = DEFAULT_NGINX_CONTAINER_NAME) {
+  const setting = normalizeNginxPublishCommandSetting(value)
+  return setting === AUTO_NGINX_PUBLISH_COMMAND
+    ? buildAdaptiveNginxPublishCommand(containerName)
+    : setting
+}
+
+export function parseNginxRuntime(output) {
+  const match = String(output || '').match(new RegExp(`${NGINX_RUNTIME_MARKER}(docker|systemd)`))
+  return match?.[1] || ''
 }
 
 export function analyzeNginxProxyConfig(content = '', options = {}) {

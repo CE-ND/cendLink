@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import ssh2 from 'ssh2'
-import { buildDockerNginxPublishCommand } from '../../../src/shared/nginxDeployment.js'
+import {
+  AUTO_NGINX_PUBLISH_COMMAND,
+  normalizeNginxPublishCommandSetting,
+  parseNginxRuntime,
+  resolveNginxPublishCommand,
+} from '../../../src/shared/nginxDeployment.js'
 import { normalizeConnectionInput, toSshConfig } from '../ssh/sshClient.js'
 
 const { Client } = ssh2
@@ -9,7 +14,7 @@ const { Client } = ssh2
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
+const DEFAULT_NGINX_RESTART_COMMAND = AUTO_NGINX_PUBLISH_COMMAND
 const FRONTEND_SOURCE_MARKER = '__CENDLINK_FRONTEND_SOURCE__='
 const FRONTEND_BACKUP_MARKER = '__CENDLINK_FRONTEND_BACKUP__='
 const FRONTEND_FILE_COUNT_MARKER = '__CENDLINK_FRONTEND_FILE_COUNT__='
@@ -21,6 +26,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
   const logs = []
   const steps = []
   let publishedOutput = null
+  let nginxRuntime = ''
 
   appendLog(logs, `开始上传前端项目 ${normalized.projectName} -> ${normalized.remoteTargetDir}`)
 
@@ -64,7 +70,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
     publishedOutput = parsePublishOutput(publishResult.stdout)
 
     if (normalized.restartNginx) {
-      await runStep({
+      const nginxResult = await runStep({
         logs,
         steps,
         name: '处理 Nginx',
@@ -73,6 +79,7 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
           return execCommand(client, normalized.nginxRestartCommand)
         },
       })
+      nginxRuntime = parseNginxRuntime(nginxResult.stdout) || (normalized.nginxRestartCommandSetting === AUTO_NGINX_PUBLISH_COMMAND ? 'auto' : 'custom')
     }
 
     return {
@@ -91,7 +98,9 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       entryFile: normalized.entryFile,
       restartNginx: normalized.restartNginx,
       nginxRestartCommand: normalized.nginxRestartCommand,
+      nginxRestartCommandSetting: normalized.nginxRestartCommandSetting,
       nginxRestarted: normalized.restartNginx,
+      nginxRuntime,
       publishedSourceDir: publishedOutput.sourceDir,
       backupDir: publishedOutput.backupDir,
       publishedFileCount: publishedOutput.fileCount,
@@ -126,7 +135,9 @@ export async function runFrontendUpload(connectionInput, uploadInput = {}) {
       entryFile: normalized.entryFile,
       restartNginx: normalized.restartNginx,
       nginxRestartCommand: normalized.nginxRestartCommand,
+      nginxRestartCommandSetting: normalized.nginxRestartCommandSetting,
       nginxRestarted: false,
+      nginxRuntime,
       publishedSourceDir: publishedOutput?.sourceDir || '',
       backupDir: publishedOutput?.backupDir || '',
       publishedFileCount: publishedOutput?.fileCount || 0,
@@ -164,7 +175,8 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
   const keepRemoteArchive = Boolean(input.keepRemoteArchive)
   const entryFile = normalizeEntryFile(input.entryFile)
   const restartNginx = Boolean(input.restartNginx)
-  const nginxRestartCommand = normalizeRestartCommand(input.nginxRestartCommand)
+  const nginxRestartCommandSetting = normalizeRestartCommand(input.nginxRestartCommand)
+  const nginxRestartCommand = resolveNginxPublishCommand(nginxRestartCommandSetting)
   const localArchiveName = localArchivePath ? path.basename(localArchivePath) : ''
   const archiveType = localArchivePath ? getArchiveType(localArchiveName) : ''
   const remoteArchivePath = localArchiveName
@@ -212,11 +224,12 @@ async function normalizeFrontendUploadInput(input = {}, options = {}) {
     entryFile,
     restartNginx,
     nginxRestartCommand,
+    nginxRestartCommandSetting,
   }
 }
 
 function normalizeRestartCommand(value) {
-  const command = String(value ?? DEFAULT_NGINX_RESTART_COMMAND).trim()
+  const command = normalizeNginxPublishCommandSetting(value ?? DEFAULT_NGINX_RESTART_COMMAND)
 
   if (/[\r\n\0]/.test(command)) {
     throw new Error('Nginx 发布后命令只能填写单行命令')

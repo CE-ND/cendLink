@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto'
-import { buildDockerNginxPublishCommand } from '../../../../src/shared/nginxDeployment.js'
+import {
+  AUTO_NGINX_PUBLISH_COMMAND,
+  normalizeNginxPublishCommandSetting,
+} from '../../../../src/shared/nginxDeployment.js'
 import { getDatabase } from '../index.js'
 
 const DEFAULT_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
+const DEFAULT_NGINX_RESTART_COMMAND = AUTO_NGINX_PUBLISH_COMMAND
 
 export async function listFrontendProjects() {
   const db = await getDatabase()
@@ -141,7 +144,7 @@ function mapFrontendProjectRow(row) {
     keepRemoteArchive: Boolean(row.keep_remote_archive),
     entryFile: row.entry_file,
     restartNginx: Boolean(row.restart_nginx),
-    nginxRestartCommand: row.nginx_restart_command || DEFAULT_NGINX_RESTART_COMMAND,
+    nginxRestartCommand: normalizeRestartCommand(row.nginx_restart_command || DEFAULT_NGINX_RESTART_COMMAND),
     lastPackagePath: row.last_package_path,
     lastUploadedAt: row.last_uploaded_at,
     lastServerId: row.last_server_id,
@@ -178,7 +181,7 @@ function normalizeEntryFile(value) {
 }
 
 function normalizeRestartCommand(value) {
-  const command = String(value ?? DEFAULT_NGINX_RESTART_COMMAND).trim()
+  const command = normalizeNginxPublishCommandSetting(value ?? DEFAULT_NGINX_RESTART_COMMAND)
   return command.replace(/[\r\n\0]+/g, ' ').slice(0, 500)
 }
 
