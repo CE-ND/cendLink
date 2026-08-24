@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useWorkspaceSession } from "../../workspace/composables/useWorkspaceSession.js";
 import AppSelect from "../../../components/ui/AppSelect.vue";
@@ -17,6 +17,11 @@ import { usePageEntrance } from "../../../composables/usePageEntrance.js";
 
 const CONTAINER_LIST_COMMAND =
   "docker ps -a --format '{{.ID}}|||{{.Names}}|||{{.Image}}|||{{.Status}}|||{{.Ports}}|||{{.CreatedAt}}'";
+// 内存占用。{{.ID}} 与 docker ps 的 {{.ID}} 同为 12 位短 ID，可以直接当键对上。
+// 不加 -a：docker stats 默认只报运行中的容器，已停止的本来就不占内存。
+const CONTAINER_STATS_FORMAT = "'{{.ID}}|||{{.MemUsage}}|||{{.MemPerc}}'";
+const CONTAINER_STATS_STREAM_COMMAND = `docker stats --format ${CONTAINER_STATS_FORMAT}`;
+const CONTAINER_STATS_SNAPSHOT_COMMAND = `docker stats --no-stream --format ${CONTAINER_STATS_FORMAT}`;
 const MAX_LOG_LINES = 5000;
 const logTailOptions = [
   { value: 100, label: "100" },
@@ -49,6 +54,18 @@ const pageRef = ref(null);
 usePageEntrance(pageRef);
 
 let unsubscribeStream = null;
+
+// 每个容器的内存占用，键为 docker 短 ID。常驻一条 docker stats 流持续写入，
+// 每秒一拍；流式不可用时退回一次性快照。
+const statsById = ref(new Map());
+const statsSessionId = ref("");
+let unsubscribeStats = null;
+// docker stats 按行吐，chunk 可能从半行处切断，未闭合的尾巴留到下一次拼。
+let statsLineBuffer = "";
+// 防止 await 期间被重复触发，开出两条后端会话。
+let statsStarting = false;
+// 组件是否仍挂载。用于处理「开流的 await 期间用户切走页面」的竞态。
+let viewActive = true;
 
 // 复制当前日志到剪贴板，短暂闪“已复制”。
 const copiedLogs = ref(false);
@@ -122,6 +139,26 @@ const selectedContainer = computed(() => {
   );
 });
 
+// 日志面板头部的副文：镜像 · 端口 · 内存，取不到内存就自然少一段。
+const selectedContainerMeta = computed(() => {
+  const container = selectedContainer.value;
+
+  if (!container) {
+    return "选择左侧容器后查看日志";
+  }
+
+  const stats = statsById.value.get(container.id);
+
+  return [
+    container.image,
+    container.ports || "未暴露端口",
+    stats?.memory ? `内存 ${stats.memory}` : "",
+    stats?.percent ? `占服务器 ${stats.percent}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+});
+
 const runningCount = computed(() => {
   return containers.value.filter((container) => isRunning(container.status))
     .length;
@@ -158,18 +195,44 @@ const displayLogLines = computed(() => {
 
 onMounted(() => {
   void refreshContainers();
+  void startStatsStream();
+  document.addEventListener("visibilitychange", handleVisibilityChange);
   window.addEventListener("scroll", closeActionMenu, true);
   window.addEventListener("resize", closeActionMenu);
   window.addEventListener("click", closeActionMenu);
 });
 
 onBeforeUnmount(() => {
+  viewActive = false;
   void stopFollowing({ silent: true });
+  void stopStatsStream();
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
   clearTimeout(copiedLogsTimer);
   window.removeEventListener("scroll", closeActionMenu, true);
   window.removeEventListener("resize", closeActionMenu);
   window.removeEventListener("click", closeActionMenu);
 });
+
+// 连接可用性变化时联动内存流：接上就开，断开就停并清掉旧数字。
+watch(canQueryDocker, (usable) => {
+  if (usable) {
+    void startStatsStream();
+    return;
+  }
+
+  void stopStatsStream();
+  statsById.value.clear();
+});
+
+// 窗口切到后台时停掉常驻流，别让一条 SSH 连接在看不见的地方一直挂着。
+function handleVisibilityChange() {
+  if (document.hidden) {
+    void stopStatsStream();
+    return;
+  }
+
+  void startStatsStream();
+}
 
 async function refreshContainers() {
   if (!canQueryDocker.value) {
@@ -190,6 +253,14 @@ async function refreshContainers() {
     }
 
     containers.value = parseContainerRows(response.stdout);
+
+    // docker stats 不会再报已删除的容器，跟着列表把残留项清掉。
+    const liveIds = new Set(containers.value.map((item) => item.id));
+    statsById.value.forEach((_value, id) => {
+      if (!liveIds.has(id)) {
+        statsById.value.delete(id);
+      }
+    });
 
     if (
       selectedContainerId.value &&
@@ -458,6 +529,192 @@ function handleStreamEvent(event) {
     followSessionId.value = "";
     cleanupStreamListener();
   }
+}
+
+// 内存占用优先走流式：一条 SSH 连接常驻，数字每秒自己跳，不像一次性命令
+// 那样每取一次就要重新握手认证一遍（executeSshCommand 每次都新建连接）。
+async function startStatsStream() {
+  const ssh = getSshBridge();
+
+  if (
+    !canQueryDocker.value ||
+    statsStarting ||
+    statsSessionId.value ||
+    document.hidden
+  ) {
+    return;
+  }
+
+  if (!hasLogStreamBridge(ssh)) {
+    await loadStatsSnapshot();
+    return;
+  }
+
+  statsStarting = true;
+  cleanupStatsListener();
+  statsLineBuffer = "";
+  unsubscribeStats = ssh.onCommandStreamEvent(handleStatsEvent);
+
+  try {
+    const response = await ssh.startCommandStream(
+      { ...form },
+      CONTAINER_STATS_STREAM_COMMAND
+    );
+
+    if (!response?.ok) {
+      throw new Error(response?.message || "启动内存监控失败");
+    }
+
+    // await 期间可能已经离开页面或断开连接：后端会话已建立，必须主动收回。
+    if (!viewActive || !canQueryDocker.value || document.hidden) {
+      void ssh.stopCommandStream?.(response.id);
+      cleanupStatsListener();
+      return;
+    }
+
+    statsSessionId.value = response.id;
+  } catch {
+    // 内存只是辅助信息，流起不来就退回快照，不占列表的错误提示位。
+    cleanupStatsListener();
+    await loadStatsSnapshot();
+  } finally {
+    statsStarting = false;
+  }
+}
+
+async function stopStatsStream() {
+  const sessionId = statsSessionId.value;
+  const ssh = getSshBridge();
+
+  cleanupStatsListener();
+  statsSessionId.value = "";
+  statsLineBuffer = "";
+
+  if (!sessionId) {
+    return;
+  }
+
+  try {
+    await ssh?.stopCommandStream?.(sessionId);
+  } catch {
+    // 前端状态已经清干净，停不掉也不影响界面。
+  }
+}
+
+function cleanupStatsListener() {
+  if (unsubscribeStats) {
+    unsubscribeStats();
+    unsubscribeStats = null;
+  }
+}
+
+// 日志跟随与内存流共用同一条事件通道，各自按 session id 认领自己的事件。
+function handleStatsEvent(event) {
+  if (!event?.id || event.id !== statsSessionId.value) {
+    return;
+  }
+
+  if (event.type === "stdout") {
+    appendStatsChunk(event.chunk);
+    return;
+  }
+
+  if (["error", "close", "stopped"].includes(event.type)) {
+    cleanupStatsListener();
+    statsSessionId.value = "";
+  }
+}
+
+function appendStatsChunk(chunk) {
+  // 非 TTY 下 docker 是按行追加的，但个别版本仍会掺进光标控制码，先剥干净再切行。
+  statsLineBuffer += String(chunk || "").replace(
+    /\u001b\[[0-9;?]*[A-Za-z]/g,
+    ""
+  );
+
+  const lines = statsLineBuffer.replace(/\r/g, "\n").split("\n");
+  statsLineBuffer = lines.pop() || "";
+  lines.forEach(applyStatsLine);
+}
+
+// 流式不可用时的兜底。--no-stream 要等 docker 采样，容器多时 1~2 秒才返回，
+// 所以它永远不挡在列表渲染前面，取到了再把数字补上。
+async function loadStatsSnapshot() {
+  if (!canQueryDocker.value) {
+    return;
+  }
+
+  try {
+    const response = await executeDockerCommand(
+      CONTAINER_STATS_SNAPSHOT_COMMAND
+    );
+
+    if (response?.ok) {
+      String(response.stdout || "")
+        .split("\n")
+        .forEach(applyStatsLine);
+    }
+  } catch {
+    // 取不到就让内存那一格留空。
+  }
+}
+
+// 每行都自带 ID，逐行 upsert 即可，不需要识别 docker 的帧边界。
+function applyStatsLine(line) {
+  const [id = "", memUsage = "", memPercent = ""] = String(line)
+    .trim()
+    .split("|||");
+
+  if (!id || !memUsage) {
+    return;
+  }
+
+  // MemUsage 形如 "123.4MiB / 7.775GiB"，斜杠前是已用，后面是上限。
+  const used = memUsage.split("/")[0].trim();
+
+  if (!used || used === "--") {
+    return;
+  }
+
+  statsById.value.set(id, {
+    memory: formatMemoryValue(used),
+    percent: memPercent.trim() === "--" ? "" : memPercent.trim(),
+    usage: memUsage.trim(),
+  });
+}
+
+// docker 给的是 "123.4MiB" 这种紧凑写法，补个空格并统一到 1 位小数。
+function formatMemoryValue(value) {
+  const match = String(value).match(/^([\d.]+)([A-Za-z]+)$/);
+
+  if (!match) {
+    return String(value);
+  }
+
+  const amount = Number(match[1]);
+
+  return Number.isFinite(amount)
+    ? `${amount.toFixed(1)} ${match[2]}`
+    : String(value);
+}
+
+function containerMemory(container) {
+  return statsById.value.get(container?.id)?.memory || "";
+}
+
+// 悬浮提示给出完整的 已用 / 上限 与占宿主机比例。
+// 两点注意：docker 报的用量含 page cache，会比 top 里的 RSS 偏大；
+// 未设 limit 的容器，MemPerc 的分母是宿主机总内存。
+function containerMemoryTitle(container) {
+  const stats = statsById.value.get(container?.id);
+
+  if (!stats) {
+    return "";
+  }
+
+  return stats.percent
+    ? `内存 ${stats.usage} · 占服务器 ${stats.percent}`
+    : `内存 ${stats.usage}`;
 }
 
 function parseContainerRows(output) {
@@ -819,6 +1076,12 @@ function formatStreamError(error) {
                 class="container-row-uptime"
                 >{{ uptimeText(container.status) }}</span
               >
+              <span
+                v-if="containerMemory(container)"
+                class="container-row-memory"
+                :title="containerMemoryTitle(container)"
+                >{{ containerMemory(container) }}</span
+              >
             </span>
           </button>
 
@@ -880,15 +1143,7 @@ function formatStreamError(error) {
       <header class="container-pane-header">
         <div>
           <strong>{{ selectedContainer?.name || "容器日志" }}</strong>
-          <small>
-            {{
-              selectedContainer
-                ? `${selectedContainer.image} · ${
-                    selectedContainer.ports || "未暴露端口"
-                  }`
-                : "选择左侧容器后查看日志"
-            }}
-          </small>
+          <small>{{ selectedContainerMeta }}</small>
         </div>
         <span v-if="selectedContainer" class="container-log-status">
           <span

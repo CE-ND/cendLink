@@ -1275,6 +1275,7 @@ h3 {
 .container-row.active .container-row-image,
 .container-row.active .container-row-status-label,
 .container-row.active .container-row-uptime,
+.container-row.active .container-row-memory,
 .container-row.active small {
   color: var(--text-mid);
 }
@@ -1363,6 +1364,16 @@ h3 {
   overflow: hidden;
   color: var(--text-muted);
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 内存占用推到状态行右端：auto 外边距吃掉剩余空间，行高不变，挤不下时
+   由运行时长先省略。等宽数字让每秒一跳的数值不左右抖。 */
+.container-row-memory {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
