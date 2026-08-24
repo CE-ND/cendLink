@@ -1,21 +1,53 @@
 :root {
   color-scheme: light;
 
-  /* 中性层 */
+  /*
+   * 中性层 = 深度阶梯。规则不是「越亮越靠前、两个主题同向」——那一版是错的。
+   * 真正的规则是「离纸面越远越显眼，方向朝还有空间的那一侧」，因为两个主题的
+   * 纸面各自贴着量程的一端：
+   *   浅色纸面 99%，往上没空间了 → 控件往暗走（挖下去）
+   *   暗色纸面 24%，往下撞外壳(14%) 和纯黑 → 控件往亮走（浮起来）
+   * 强行同向的后果：暗色的控件槽被压到 19.5%，和 14% 的外壳挤在近黑区只差
+   * 10 级 sRGB，「外壳更靠后」整个读不出来，纸面反而像浮在两块黑之间。
+   *
+   * 外壳(chrome) 是唯一的例外，两个主题都比纸面暗——它是「纸背后的桌面」，
+   * 不是纸上的控件；暗色 14% 正好把纸托起来。
+   *
+   * 只有两级容器：外壳(chrome) 和「那张纸」(surface)。内容区自己就是纸，
+   * 所以页面里不再套卡片——纸上铺纸就是多余的一层。
+   * 纸内部同样只允许两个色调：纸面(surface) 与控件层(inset)；分区一律由
+   * 小标题 + 留白承担，不叠下沉块 / 斑马纹 / 更深槽底这类装饰性中间层。
+   * subtle / raised 只用在纸之外（侧边栏、浮层），参照系是 chrome 不是纸面。
+   *
+   * control-lift = 骑在控件层之上的那一档：分段滑块、投放区图标片、聚焦填充、
+   * 次要按钮 hover。它必须跟着 inset 同向再走一步——否则暗色下滑块比槽还暗，
+   * 选中态看起来是凹进去的。浅色下它恰好等于纸面，所以浅色观感零变化。
+   */
   --bg: oklch(97.5% 0.006 245);
-  --page-bg: oklch(98.4% 0.005 245);
-  --chrome: oklch(94% 0.008 245);
+  --chrome: oklch(92.5% 0.008 245);
+  --surface-inset: oklch(95.8% 0.006 245);
+  --surface-subtle: oklch(96.8% 0.006 245);
   --surface: oklch(99% 0.004 245);
   --surface-raised: oklch(100% 0 0);
-  --surface-subtle: oklch(97.8% 0.005 245);
   --surface-muted: oklch(94.5% 0.007 245);
+  /* 浅色下「往亮走一步」正好落回纸面，与改版前逐字节相同 */
+  --control-lift: oklch(99% 0.004 245);
+  /* 开关旋钮。轨道用 --border-strong（离纸面最远的一档中性），旋钮必须比轨道更亮：
+     浅色下轨道 79%，旋钮 100% 即可；暗色下轨道被提到 43%，旋钮也得跟到 72%，
+     否则旋钮比轨道还暗，会读成「轨道上挖了个洞」而不是「一颗滑块」。
+     开启态另用 --text-on-fill：那时旋钮骑在 accent 填充上，需要的是填充之上的对比档。 */
+  --switch-knob: oklch(100% 0 0);
   --surface-strong: oklch(20% 0.015 245);
+  /* 内容区即「那张纸」，与 surface 同色。用别名而非字面值，避免两者日后走偏。 */
+  --page-bg: var(--surface);
 
   /* 描边 */
   --border: oklch(87% 0.008 245);
   --border-subtle: oklch(90.5% 0.007 245);
   --border-strong: oklch(79% 0.012 245);
   --chrome-border: oklch(84.5% 0.01 245);
+  /* 发丝收边：色差承担分区后唯一保留的线，只用于卡片 / 浮层最外缘收口 */
+  --border-hairline: oklch(92% 0.006 245);
 
   /* 文字层级 */
   --text: oklch(26% 0.014 245);
@@ -28,22 +60,33 @@
      亮色主题填充较深→用近白；暗色主题填充被提亮（accent 70%）→翻转为近黑，保证对比度。 */
   --text-on-fill: oklch(99% 0.004 245);
 
-  /* 品牌与状态基色 */
-  --accent: oklch(56% 0.12 185);
-  --accent-strong: oklch(48% 0.13 185);
-  --accent-contrast: oklch(99% 0.01 185);
-  --accent-alt: oklch(58% 0.14 285);
-  --accent-blue: oklch(56% 0.11 230);
+  /*
+   * 主色黑灰化：accent 退到与中性层同一色相(245)、彩度压到 0.012，于是「品牌色」＝深灰，
+   * 主按钮 / 选中染底 / 焦点环 / hover 全部走中性，界面的常态没有彩色。
+   *
+   * 状态色是刻意的例外，保持正常饱和度——绿要看得出是绿、红要看得出是红，否则
+   * 「连接成功 / 失败」就失去了第一眼可辨性。它们只出现在真正的状态位（结果横幅、
+   * 状态胶囊、状态点、指标条、告警文字），不参与常规装饰，所以不会把界面拉回花哨。
+   *
+   * 每个状态两档：不带后缀的用于填充 / 图标，-text 用于文字——文字档彩度更高、
+   * 明度更远离底色，因为细笔画要读出颜色需要比色块更多的彩度。
+   * info 并入中性色相：信息态不是告警，不需要独立色彩身份。
+   */
+  --accent: oklch(38% 0.012 245);
+  --accent-strong: oklch(27% 0.014 245);
+  --accent-contrast: oklch(99% 0.004 245);
+  --accent-alt: oklch(44% 0.014 245);
+  --accent-blue: oklch(41% 0.013 245);
 
-  --success: oklch(55% 0.13 150);
-  --success-text: oklch(38% 0.11 150);
-  --danger: oklch(58% 0.16 25);
-  --danger-text: oklch(48% 0.16 25);
-  --danger-border: oklch(72% 0.1 25);
-  --warning: oklch(72% 0.14 75);
-  --warning-text: oklch(48% 0.13 75);
-  --info: oklch(57% 0.13 170);
-  --info-text: oklch(38% 0.11 170);
+  --success: oklch(52% 0.10 150);
+  --success-text: oklch(42% 0.12 150);
+  --danger: oklch(53% 0.14 25);
+  --danger-text: oklch(45% 0.16 25);
+  --danger-border: oklch(70% 0.09 25);
+  --warning: oklch(70% 0.11 75);
+  --warning-text: oklch(47% 0.11 75);
+  --info: oklch(50% 0.04 245);
+  --info-text: oklch(40% 0.035 245);
 
   /* 滚动条 */
   --scrollbar-thumb: oklch(68% 0.012 245 / 48%);
@@ -72,15 +115,17 @@
   --radius-lg: 12px;
   --radius-pill: 999px;
 
-  /* 焦点光环：饱和填充控件之上的统一焦点环，与输入框聚焦发光一致（随主题的 accent 解析）。 */
-  --focus-glow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+  /* 焦点光环：accent 转中性后 14% 的环几乎不可见，提到 38% 才有足够强度（无障碍必需）。 */
+  --focus-glow: 0 0 0 3px color-mix(in oklch, var(--accent) 38%, transparent);
 
   /* 终端（两态均为暗色，保持不变） */
   --terminal: oklch(17% 0.014 245);
   --terminal-border: oklch(28% 0.02 245);
   --terminal-text: oklch(84% 0.015 245);
-  /* 交互式 xterm 舞台底色：亮色主题下为浅底，需与 xterm.js 主题 background 对齐 */
-  --terminal-stage: oklch(97.5% 0.004 230);
+  /* 终端画布底色。它不是独立的一层——命令页里终端就是纸面本身，
+     不再比纸面暗一档。保留这个别名只为给 SshTerminal.vue 里硬编码的
+     xterm background 一个明确的同步锚点。 */
+  --terminal-stage: var(--surface);
 
   --font-sans: 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC',
     'Hiragino Sans GB', 'Noto Sans CJK SC', 'Source Han Sans SC', system-ui, sans-serif;
@@ -104,19 +149,26 @@
 [data-theme='dark'] {
   color-scheme: dark;
 
+  /* 外壳 14% 保持：它是纸背后的桌面，两个主题都该比纸面暗。
+     控件层则从 19.5%（纸面之下）翻到 28.5%（纸面之上）——暗色往下已经没有量程，
+     再挖只会和外壳糊成一团。次要按钮 26.5% → 30%，保持「比输入框再往前一点」，
+     镜像浅色里按钮(94.5) 比输入框(95.8) 更远离纸面的关系。 */
   --bg: oklch(19% 0.012 245);
-  --page-bg: oklch(16.5% 0.011 245);
-  --chrome: oklch(22% 0.013 245);
+  --chrome: oklch(14% 0.012 245);
+  --surface-subtle: oklch(21% 0.013 245);
   --surface: oklch(24% 0.014 245);
   --surface-raised: oklch(27.5% 0.015 245);
-  --surface-subtle: oklch(21.5% 0.013 245);
-  --surface-muted: oklch(26.5% 0.014 245);
+  --surface-inset: oklch(28.5% 0.015 245);
+  --surface-muted: oklch(30% 0.015 245);
+  --control-lift: oklch(33% 0.016 245);
+  --switch-knob: oklch(72% 0.012 245);
   --surface-strong: oklch(90% 0.01 245);
 
   --border: oklch(34% 0.014 245);
   --border-subtle: oklch(30% 0.013 245);
   --border-strong: oklch(43% 0.016 245);
   --chrome-border: oklch(32% 0.014 245);
+  --border-hairline: oklch(29% 0.013 245);
 
   --text: oklch(93% 0.008 245);
   --text-mid: oklch(80% 0.01 245);
@@ -127,21 +179,22 @@
   /* 暗色主题填充色被提亮（accent 70% 等），故填充上的文字翻转为近黑，避免白字低对比 */
   --text-on-fill: oklch(20% 0.02 245);
 
-  --accent: oklch(70% 0.13 185);
-  --accent-strong: oklch(78% 0.13 185);
-  --accent-contrast: oklch(18% 0.02 185);
-  --accent-alt: oklch(72% 0.14 285);
-  --accent-blue: oklch(70% 0.12 230);
+  /* 暗色下 accent 提到 80% 的近白灰：主按钮变浅灰填充 + 近黑文字，与浅色主题镜像。 */
+  --accent: oklch(80% 0.008 245);
+  --accent-strong: oklch(91% 0.006 245);
+  --accent-contrast: oklch(16% 0.012 245);
+  --accent-alt: oklch(74% 0.01 245);
+  --accent-blue: oklch(77% 0.009 245);
 
-  --success: oklch(70% 0.14 150);
-  --success-text: oklch(80% 0.13 150);
-  --danger: oklch(68% 0.17 25);
-  --danger-text: oklch(78% 0.15 25);
-  --danger-border: oklch(50% 0.14 25);
-  --warning: oklch(80% 0.14 75);
-  --warning-text: oklch(84% 0.13 75);
-  --info: oklch(70% 0.13 170);
-  --info-text: oklch(80% 0.12 170);
+  --success: oklch(70% 0.11 150);
+  --success-text: oklch(80% 0.12 150);
+  --danger: oklch(66% 0.14 25);
+  --danger-text: oklch(77% 0.14 25);
+  --danger-border: oklch(48% 0.11 25);
+  --warning: oklch(80% 0.11 75);
+  --warning-text: oklch(86% 0.10 75);
+  --info: oklch(72% 0.04 245);
+  --info-text: oklch(82% 0.035 245);
 
   --scrollbar-thumb: oklch(62% 0.012 245 / 42%);
   --scrollbar-thumb-hover: oklch(78% 0.015 245 / 62%);
@@ -152,7 +205,6 @@
   --shadow-color-strong: oklch(0% 0 0 / 58%);
 
   /* xterm 舞台在暗色下贴近终端底色，避免亮色残块 */
-  --terminal-stage: oklch(20% 0.012 245);
 }
 
 * {
@@ -447,7 +499,8 @@ h3 {
 }
 
 /* 导航滑块：独立元素，切页时平滑滑到当前项，位于导航项底层。
-   用 surface-raised + 内嵌发丝描边 + 贴地投影做成“抬起的芯片”，暗色下与 chrome 拉开层次。 */
+   chrome 压暗后 raised 与底色差 7.5(浅)/13.5(暗) 个明度点，足以独立成形，
+   故去掉内嵌描边与贴地投影，纯靠色差抬起。 */
 .nav-thumb {
   position: absolute;
   top: 0;
@@ -456,9 +509,6 @@ h3 {
   height: 36px;
   border-radius: var(--radius-md);
   background: var(--surface-raised);
-  box-shadow:
-    inset 0 0 0 1px var(--border-subtle),
-    var(--shadow-sm);
   opacity: 0;
   transform: translateY(0);
   transition: opacity 180ms ease;
@@ -489,7 +539,7 @@ h3 {
 
 .nav-item:hover {
   color: var(--text);
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
 }
 
 .nav-item.active {
@@ -535,7 +585,7 @@ h3 {
 
 .settings-entry:hover {
   color: var(--text);
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, transparent);
 }
 
 .settings-entry svg {
@@ -562,20 +612,18 @@ h3 {
   justify-content: center;
   width: 38px;
   height: 38px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 8px;
   color: var(--text-muted);
-  background: transparent;
+  background: var(--surface-subtle);
   transition:
     color 160ms ease,
-    border-color 160ms ease,
     background-color 160ms ease;
 }
 
 .theme-toggle:hover {
   color: var(--accent);
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: var(--surface);
 }
 
 .theme-toggle svg {
@@ -631,18 +679,20 @@ h3 {
 .server-new-button {
   height: 24px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface);
   font-size: 11px;
   font-weight: 700;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 .server-new-button:hover {
   color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--surface-muted);
+  background: var(--surface-raised);
 }
 
 .server-row {
@@ -653,14 +703,11 @@ h3 {
   width: 100%;
   min-height: 56px;
   padding: 9px 10px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 8px;
   background: var(--surface-subtle);
   text-align: left;
-  transition:
-    border-color 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease;
+  transition: background-color 160ms ease;
 }
 
 .server-row-button {
@@ -670,20 +717,18 @@ h3 {
   text-align: left;
 }
 
+/* 选中态改为 accent 染底（以 surface 为混合基底保持不透明），不再靠描边。
+   配方与 .remote-file-table tbody tr.selected 一致，全站选中语言统一。 */
 .server-row.selected {
-  border-color: color-mix(in oklch, var(--accent) 32%, transparent);
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 7%, transparent);
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface));
 }
 
 .server-row:hover {
-  border-color: color-mix(in oklch, var(--accent) 24%, transparent);
   background: var(--surface);
 }
 
 .server-row.selected:hover {
-  border-color: color-mix(in oklch, var(--accent) 36%, transparent);
-  background: color-mix(in oklch, var(--accent) 9%, transparent);
+  background: color-mix(in oklch, var(--accent) 19%, var(--surface));
 }
 
 .server-row-button:hover {
@@ -737,8 +782,7 @@ h3 {
 .server-row-empty {
   align-items: center;
   justify-content: flex-start;
-  border-color: var(--border);
-  background: var(--surface-muted);
+  background: color-mix(in oklch, var(--surface-subtle) 55%, transparent);
   color: var(--text-muted);
 }
 
@@ -764,24 +808,27 @@ h3 {
   white-space: nowrap;
 }
 
+/* 置顶按钮嵌在 server-row（subtle）里，surface 底本身就高出 2.2 个明度点，去掉描边后仍成形。 */
 .server-pin-button {
   flex: 0 0 auto;
   min-width: 52px;
   height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface);
   font-size: 11px;
   font-weight: 700;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
 }
 
 .server-pin-button:hover,
 .server-pin-button.active {
   color: var(--accent-strong);
-  border-color: color-mix(in oklch, var(--accent) 35%, transparent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
 }
 
 .status-dot {
@@ -795,12 +842,12 @@ h3 {
 
 .status-dot.connected {
   background: var(--success);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--success) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--success) 14%, transparent);
 }
 
 .status-dot.failed {
   background: var(--danger);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--danger) 14%, transparent);
 }
 
 .workspace {
@@ -843,6 +890,8 @@ h3 {
   align-items: center;
 }
 
+/* 胶囊统一为「纸上的控件层芯片」：page-bg 与 surface 合并后两者同底，
+   不再需要像之前那样为两种背景分开配色。 */
 .bridge-badge,
 .state-pill {
   display: inline-flex;
@@ -850,10 +899,10 @@ h3 {
   max-width: 100%;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 99px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-inset);
   font-size: 12px;
   font-weight: 600;
   overflow: hidden;
@@ -861,31 +910,29 @@ h3 {
   white-space: nowrap;
 }
 
+/* 状态变体：描边退役后把染底浓度从 9~12% 提到 16~20%，并改用 -text 变体取文字色
+   （-text 就是为「填充之上的文字」准备的高对比档），保证无描边也能读出状态。 */
 .bridge-badge.ready,
 .state-pill.success {
-  color: var(--success);
-  border-color: color-mix(in oklch, var(--success) 35%, transparent);
-  background: color-mix(in oklch, var(--success) 9%, transparent);
+  color: var(--success-text);
+  background: color-mix(in oklab, var(--success) 18%, var(--surface-inset));
 }
 
 .state-pill.failed {
-  color: var(--danger);
-  border-color: color-mix(in oklch, var(--danger) 35%, transparent);
-  background: color-mix(in oklch, var(--danger) 9%, transparent);
+  color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 16%, var(--surface-inset));
 }
 
 .state-pill.warning {
   color: var(--warning-text);
-  border-color: color-mix(in oklch, var(--warning) 35%, transparent);
-  background: color-mix(in oklch, var(--warning) 12%, transparent);
+  background: color-mix(in oklab, var(--warning) 20%, var(--surface-inset));
 }
 
 /* 运行中：与 .success 同配方但改用 accent，避免运行态看起来和 Idle 一样。
    呼吸点用不透明度脉动（非 box-shadow），以免被 state-pill 的 overflow:hidden 裁切。 */
 .state-pill.running {
   color: var(--accent-strong);
-  border-color: color-mix(in oklch, var(--accent) 35%, transparent);
-  background: color-mix(in oklch, var(--accent) 9%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface-inset));
 }
 
 .state-pill.running::before {
@@ -951,51 +998,178 @@ h3 {
   min-height: 0;
 }
 
+/* 表单与状态合并后不再是一张「卡片」：内容区本身就是那张纸，这里只负责栅格。
+   两栏之间刻意不切底色、不加竖线——纸上再分底色就成了多余的层级；
+   分隔交给 36px 中缝和各栏小标题。左右内边距由 .workspace 提供，此处不再叠加。 */
 .connection-board {
   display: grid;
-  grid-template-columns: minmax(360px, 460px) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
   overflow: hidden;
 }
 
-.connection-board > .connection-form,
-.connection-board > .status-panel {
+.connection-console {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  min-height: 0;
+  overflow: hidden;
 }
 
+/* 操作条：连接态胶囊在左（读数），三个动作在右（操作）。 */
+.console-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.console-body {
+  display: grid;
+  grid-template-columns: minmax(340px, 440px) minmax(0, 1fr);
+  gap: 36px;
+  min-width: 0;
+  min-height: 0;
+  padding-top: 20px;
+  overflow: hidden;
+}
+
+/* 镜像打包页与服务器页同构：内容区自己就是那张纸，页面只提供纵向骨架，不再摆两张卡片。
+   表单与预览合并成一个控制台，四个动作和构建态胶囊上移到共享操作条。 */
 .package-view {
   display: grid;
-  grid-template-columns: minmax(380px, 420px) minmax(0, 1fr);
-  gap: 18px;
-  height: 100%;
-  min-height: 0;
-}
-
-.deploy-view {
-  display: grid;
-  grid-template-columns: minmax(460px, 540px) minmax(0, 1fr);
-  gap: 18px;
-  height: 100%;
-  min-height: 0;
-}
-
-.container-logs-view {
-  display: grid;
-  grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
-  gap: 0;
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+}
+
+.package-console {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 动作条落到页尾：这页是「配置 → 生成」的流程，生成镜像包是终点动作，
+   排在表单末尾才顺着阅读顺序走。放顶上还会和页头的桥接胶囊挤成两层右对齐，
+   同时把状态胶囊甩到另一头——那三样本来就该在同一行。 */
+.console-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  min-width: 0;
+  padding-top: 18px;
+}
+
+/* 胶囊说「现在是什么状态」，提示说「为什么还不能生成」，两句连着读；
+   都紧挨着右边那颗主按钮，所以按不动时答案就在同一行上。 */
+.console-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.console-hint {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 左右两栏共用同一张纸：不切底色、不加竖线——纸上再分底色就是多余的层级。
+   分隔交给 36px 中缝和各栏小标题；左右内边距由 .workspace 提供，此处不叠加。 */
+.package-body {
+  display: grid;
+  grid-template-columns: minmax(360px, 420px) minmax(0, 1fr);
+  gap: 36px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 远程部署页 / 前端上传页与镜像打包页同构：内容区自己就是那张纸，页面只提供纵向骨架，
+   不再摆两张卡片。表单与预览合并成一个控制台，三个动作和运行态胶囊下移到页尾操作条。 */
+.deploy-view,
+.frontend-upload-view {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.deploy-console,
+.frontend-console {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左右两栏共用同一张纸：不切底色、不加竖线，分隔交给 36px 中缝和各栏小标题。
+   这两页的左栏字段都比镜像打包页多，所以上限给到 460px。 */
+.deploy-body,
+.frontend-body {
+  display: grid;
+  grid-template-columns: minmax(380px, 460px) minmax(0, 1fr);
+  gap: 36px;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 右栏＝预览本体：主标识与定义列表两段定高，命令段吃掉剩余高度并在内部滚动，
+   所以整栏不滚。运行中 RunProgress 追加成隐式第四行。 */
+.deploy-preview-col,
+.frontend-preview-col {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.deploy-preview-scroll,
+.frontend-preview-scroll {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* 与其余几页同构：内容区自己就是那张纸（.app-page-frame 的 --page-bg 本来就是 --surface，
+   这里再刷一遍同色只是空转），左右两栏共用它——不切底色、不加竖线，分隔交给中缝。
+   顶上那条 1px 也退役：页头与内容之间已有 18px 间距，线是画在同一张纸上的。 */
+.container-logs-view {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 28px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .container-list-pane,
@@ -1004,10 +1178,6 @@ h3 {
   min-height: 0;
   overflow: hidden;
   background: transparent;
-}
-
-.container-list-pane {
-  border-right: 1px solid var(--border);
 }
 
 .container-list-pane {
@@ -1023,10 +1193,8 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  min-height: 58px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-subtle);
+  min-height: 44px;
+  padding: 0 0 12px;
 }
 
 .container-pane-header > div {
@@ -1053,16 +1221,15 @@ h3 {
 
 .container-search-row {
   position: relative;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  padding: 0 0 12px;
 }
 
+/* 搜索图标压在输入框的控件层上，--text-soft（浅色 67%）在那儿只有 2.6:1。 */
 .container-search-icon {
   position: absolute;
-  top: 50%;
-  left: 22px;
-  color: var(--text-soft);
+  top: 18px;
+  left: 11px;
+  color: var(--text-muted);
   transform: translateY(-50%);
   pointer-events: none;
 }
@@ -1074,8 +1241,11 @@ h3 {
 .container-list {
   display: grid;
   align-content: start;
+  gap: 4px;
   min-height: 0;
+  padding-right: 4px;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .container-row {
@@ -1084,17 +1254,29 @@ h3 {
   grid-template-columns: minmax(0, 1fr) 40px;
   align-items: stretch;
   width: 100%;
-  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-md);
   color: var(--text);
   background: transparent;
+  transition: background-color 160ms ease;
 }
 
+/* 行间那条 1px 退役，换成 4px 间距 + 圆角：这是应用自己的列表处方（同 .nav-item /
+   .server-list）。hover 与选中一律 accent 染底，两个主题互为镜像。 */
 .container-row:hover {
-  background: color-mix(in oklch, var(--accent) 6%, transparent);
+  background: color-mix(in oklch, var(--accent) 7%, var(--surface));
 }
 
 .container-row.active {
-  background: color-mix(in oklch, var(--accent) 11%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
+}
+
+/* 选中行的染底会把 --text-muted 压到 4.5 以下（浅色 3.91）。选中本来就是「加重」，
+   镜像名与运行时长跟着上一档，与文件表已选行的次要列同一个动作。 */
+.container-row.active .container-row-image,
+.container-row.active .container-row-status-label,
+.container-row.active .container-row-uptime,
+.container-row.active small {
+  color: var(--text-mid);
 }
 
 .container-row-select {
@@ -1102,7 +1284,7 @@ h3 {
   gap: 3px;
   width: 100%;
   min-width: 0;
-  padding: 11px 6px 11px 14px;
+  padding: 10px 6px 10px 12px;
   border: 0;
   color: inherit;
   background: transparent;
@@ -1153,10 +1335,10 @@ h3 {
 .container-kind-badge {
   flex: 0 0 auto;
   padding: 2px 6px;
-  border: 1px solid color-mix(in oklch, var(--info) 22%, transparent);
+  border: 0;
   border-radius: 999px;
   color: var(--info-text);
-  background: color-mix(in oklch, var(--info) 10%, transparent);
+  background: color-mix(in oklab, var(--info) 18%, transparent);
   font-size: 11px;
   font-weight: 800;
   line-height: 1.2;
@@ -1179,7 +1361,7 @@ h3 {
 
 .container-row-uptime {
   overflow: hidden;
-  color: var(--text-soft);
+  color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1209,11 +1391,12 @@ h3 {
   transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
+/* 此前 hover 换成 --surface：行本来就坐在纸面上，浅色下这一步等于没变，
+   只剩描边在动。改用 accent 染底，压在行自己的底色之上，两个主题都读得出来。 */
 .container-action-trigger:hover,
 .container-action-trigger.open {
-  border-color: var(--chrome-border);
   color: var(--text);
-  background: var(--surface);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
 }
 
 .container-action-trigger span {
@@ -1231,9 +1414,9 @@ h3 {
   z-index: 20;
   min-width: 116px;
   padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
   box-shadow: 0 12px 28px var(--shadow-color-strong);
 }
 
@@ -1253,15 +1436,15 @@ h3 {
 }
 
 .container-action-menu button:hover {
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-raised));
 }
 
 .container-action-menu button.danger {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .container-action-menu button.danger:hover {
-  background: color-mix(in oklch, var(--danger) 10%, transparent);
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface-raised));
 }
 
 .container-action-menu-transition-enter-active,
@@ -1292,12 +1475,12 @@ h3 {
 
 .container-status-dot.running {
   background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 12%, transparent);
 }
 
 .container-status-dot.exited {
   background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 10%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 10%, transparent);
 }
 
 .container-status-dot.neutral {
@@ -1312,10 +1495,10 @@ h3 {
 @keyframes container-log-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 45%, transparent);
   }
   60% {
-    box-shadow: 0 0 0 5px color-mix(in oklch, var(--success) 0%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in oklab, var(--success) 0%, transparent);
   }
 }
 
@@ -1339,9 +1522,7 @@ h3 {
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface-subtle);
+  padding: 0 0 12px;
 }
 
 .container-log-toolbar button {
@@ -1367,10 +1548,10 @@ h3 {
   justify-content: center;
   width: 32px;
   padding: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-muted);
   cursor: pointer;
   transition:
     color var(--duration-fast) var(--ease-out),
@@ -1378,9 +1559,12 @@ h3 {
     background-color var(--duration-fast) var(--ease-out);
 }
 
+/* 与紧挨着的 .secondary-button 走同一档填充和同一个 hover，否则同一条工具条上
+   三个同高的按钮里有一个长得不一样。 */
 .log-copy-button:hover:not(:disabled) {
   color: var(--text);
-  border-color: var(--border-strong);
+  border-color: var(--border);
+  background: var(--control-lift);
 }
 
 .log-copy-button:focus-visible {
@@ -1411,22 +1595,26 @@ h3 {
 }
 
 .container-state {
-  margin: 0;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
+  margin: 0 0 10px;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
   color: var(--text-muted);
   font-size: 13px;
 }
 
+/* 8% 的透明染底在两个主题下都几乎读不出来；提到 12%，与 .inline-delete-confirm 对齐。 */
 .container-state.failed {
-  color: var(--danger);
-  background: color-mix(in oklch, var(--danger) 8%, transparent);
+  color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
 }
 
+/* 日志正文＝一口凹槽：比纸面暗一档，两个主题一致（与 chrome 同规矩）。
+   这页现在只剩它一块有底色，所以它自己收边、圆角，而不是横贯全宽的一条带。 */
 .container-log-output {
   min-height: 0;
   padding: 12px 0;
   overflow: auto;
+  border-radius: var(--radius-md);
   color: var(--text);
   background: var(--surface-subtle);
   font-family: var(--font-mono);
@@ -1475,7 +1663,7 @@ h3 {
 }
 
 .container-log-line:hover {
-  background: color-mix(in oklch, var(--chrome) 70%, transparent);
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-subtle));
 }
 
 .container-log-line.error {
@@ -1515,7 +1703,7 @@ h3 {
 
 .primary-button.danger {
   background: var(--danger);
-  box-shadow: 0 8px 22px color-mix(in oklch, var(--danger) 18%, transparent);
+  box-shadow: 0 8px 22px color-mix(in oklab, var(--danger) 18%, transparent);
 }
 
 .nginx-config-view {
@@ -1823,12 +2011,12 @@ h3 {
 }
 
 .nginx-mount-card.missing {
-  border-color: color-mix(in oklch, var(--danger) 32%, transparent);
-  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger) 32%, transparent);
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface));
 }
 
 .nginx-mount-card.readonly {
-  background: color-mix(in oklch, var(--warning) 8%, var(--surface));
+  background: color-mix(in oklab, var(--warning) 8%, var(--surface));
 }
 
 .nginx-mount-card-head {
@@ -1874,14 +2062,14 @@ h3 {
 
 .nginx-mount-card.editable .nginx-mount-card-head b {
   color: var(--success-text);
-  border-color: color-mix(in oklch, var(--success) 32%, transparent);
-  background: color-mix(in oklch, var(--success) 10%, transparent);
+  border-color: color-mix(in oklab, var(--success) 32%, transparent);
+  background: color-mix(in oklab, var(--success) 10%, transparent);
 }
 
 .nginx-mount-card.missing .nginx-mount-card-head b {
-  color: var(--danger);
-  border-color: color-mix(in oklch, var(--danger) 32%, transparent);
-  background: color-mix(in oklch, var(--danger) 9%, transparent);
+  color: var(--danger-text);
+  border-color: color-mix(in oklab, var(--danger) 32%, transparent);
+  background: color-mix(in oklab, var(--danger) 9%, transparent);
 }
 
 .nginx-mount-card-paths {
@@ -2327,10 +2515,10 @@ h3 {
   align-items: center;
   min-height: 22px;
   padding: 0 7px;
-  border: 1px solid color-mix(in oklch, var(--info) 24%, transparent);
+  border: 1px solid color-mix(in oklab, var(--info) 24%, transparent);
   border-radius: 999px;
   color: var(--info-text);
-  background: color-mix(in oklch, var(--info) 10%, transparent);
+  background: color-mix(in oklab, var(--info) 10%, transparent);
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
@@ -2343,9 +2531,9 @@ h3 {
   gap: 7px;
   min-width: 0;
   padding: 8px 10px;
-  border: 1px solid color-mix(in oklch, var(--warning) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warning) 28%, transparent);
   border-radius: 7px;
-  background: color-mix(in oklch, var(--warning) 10%, transparent);
+  background: color-mix(in oklab, var(--warning) 10%, transparent);
 }
 
 .nginx-return-row strong {
@@ -2381,8 +2569,8 @@ h3 {
 }
 
 .nginx-route-column.frontend {
-  border-color: color-mix(in oklch, var(--success) 22%, transparent);
-  background: color-mix(in oklch, var(--success) 8%, var(--surface));
+  border-color: color-mix(in oklab, var(--success) 22%, transparent);
+  background: color-mix(in oklab, var(--success) 8%, var(--surface));
 }
 
 .nginx-route-column.backend {
@@ -2452,7 +2640,7 @@ h3 {
 }
 
 .nginx-route-card.frontend {
-  border-color: color-mix(in oklch, var(--success) 24%, transparent);
+  border-color: color-mix(in oklab, var(--success) 24%, transparent);
 }
 
 .nginx-route-card.backend {
@@ -2552,10 +2740,10 @@ h3 {
   overflow: hidden;
   min-height: 24px;
   padding: 0 8px;
-  border: 1px solid color-mix(in oklch, var(--warning) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--warning) 28%, transparent);
   border-radius: 999px;
   color: var(--warning-text);
-  background: color-mix(in oklch, var(--warning) 10%, transparent);
+  background: color-mix(in oklab, var(--warning) 10%, transparent);
   font-size: 11px;
   font-weight: 800;
   line-height: 22px;
@@ -3635,15 +3823,15 @@ h3 {
 }
 
 .nginx-editor-toast.success {
-  background: color-mix(in oklch, var(--success) 14%, var(--surface));
+  background: color-mix(in oklab, var(--success) 14%, var(--surface));
 }
 
 .nginx-editor-toast.error {
-  background: color-mix(in oklch, var(--danger) 12%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
 }
 
 .nginx-editor-toast.warning {
-  background: color-mix(in oklch, var(--warning) 12%, var(--surface));
+  background: color-mix(in oklab, var(--warning) 12%, var(--surface));
 }
 
 .nginx-editor-toast-content {
@@ -3885,36 +4073,36 @@ h3 {
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-line {
-  background: color-mix(in oklch, var(--warning) 8%, transparent);
+  background: color-mix(in oklab, var(--warning) 8%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-line {
-  background: color-mix(in oklch, var(--success) 8%, transparent);
+  background: color-mix(in oklab, var(--success) 8%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-line {
-  background: color-mix(in oklch, var(--danger) 8%, transparent);
+  background: color-mix(in oklab, var(--danger) 8%, transparent);
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-type {
   color: var(--warning-text);
-  background: color-mix(in oklch, var(--warning) 16%, transparent);
+  background: color-mix(in oklab, var(--warning) 16%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-type {
   color: var(--success-text);
-  background: color-mix(in oklch, var(--success) 14%, transparent);
+  background: color-mix(in oklab, var(--success) 14%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-type {
   color: var(--danger-text);
-  background: color-mix(in oklch, var(--danger) 14%, transparent);
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
 }
 
 .nginx-diff-original-note {
   align-items: start;
   border-bottom: 1px dashed var(--danger-border);
-  background: color-mix(in oklch, var(--danger) 7%, transparent);
+  background: color-mix(in oklab, var(--danger) 7%, transparent);
   color: var(--danger-text);
 }
 
@@ -3933,19 +4121,19 @@ h3 {
 }
 
 .nginx-diff-original-note .changed {
-  background: color-mix(in oklch, var(--danger) 18%, transparent);
+  background: color-mix(in oklab, var(--danger) 18%, transparent);
 }
 
 .nginx-diff-preview-row.change .nginx-diff-preview-line .changed {
-  background: color-mix(in oklch, var(--warning) 22%, transparent);
+  background: color-mix(in oklab, var(--warning) 22%, transparent);
 }
 
 .nginx-diff-preview-row.add .nginx-diff-preview-line .changed {
-  background: color-mix(in oklch, var(--success) 20%, transparent);
+  background: color-mix(in oklab, var(--success) 20%, transparent);
 }
 
 .nginx-diff-preview-row.remove .nginx-diff-preview-line .changed {
-  background: color-mix(in oklch, var(--danger) 18%, transparent);
+  background: color-mix(in oklab, var(--danger) 18%, transparent);
 }
 
 .nginx-diff-stat {
@@ -4079,7 +4267,7 @@ h3 {
 }
 
 .settings-value.ok {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .settings-modal-footer {
@@ -4184,31 +4372,40 @@ h3 {
   line-height: 1.6;
 }
 
+/* 输入 + 单位的组合控件：整个外壳就是那个凹槽，内层 input 透明借用外壳底色，
+   否则全局 input 的 inset 底会在外壳里显出一块异色。聚焦时整体浮起。 */
 .settings-input-unit {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   flex: 0 0 190px;
   height: 40px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
-  background: var(--surface);
+  background: var(--surface-inset);
   overflow: hidden;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 
 .settings-input-unit:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+  background: var(--control-lift);
+  box-shadow: var(--focus-glow);
 }
 
 .settings-input-unit input {
   height: 38px;
   border: 0;
+  background: transparent;
   box-shadow: none;
   text-align: right;
 }
 
 .settings-input-unit input:focus {
+  background: transparent;
   box-shadow: none;
 }
 
@@ -4220,6 +4417,8 @@ h3 {
 }
 
 /* 主题分段控件：浅/深二选一，滑块滑到选中项，与 nav / history 分段同一动效语言。 */
+/* 与 .segmented 同一配方：槽底 inset、滑块 surface，去掉外描边、滑块 accent 描边环与投影。
+   选中语义已由 .theme-segment-item.active 的 accent 文字色承载，不需要再描一圈。 */
 .theme-segment {
   position: relative;
   display: grid;
@@ -4227,9 +4426,9 @@ h3 {
   flex: 0 0 auto;
   gap: 0;
   padding: 3px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 10px;
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
 }
 
 .theme-segment-thumb {
@@ -4240,10 +4439,7 @@ h3 {
   left: 3px;
   width: calc((100% - 6px) / 2);
   border-radius: 8px;
-  background: var(--surface-raised);
-  box-shadow:
-    inset 0 0 0 1px color-mix(in oklch, var(--accent) 38%, transparent),
-    var(--shadow-sm);
+  background: var(--control-lift);
   transform: translateX(0);
   transition: transform var(--duration-base) var(--ease-out);
 }
@@ -4309,18 +4505,22 @@ h3 {
   box-shadow: var(--shadow);
 }
 
+/* 合并后表单不再是独立卡片：外框与内边距交给 .console-body，这里只管字段节奏与滚动。 */
 .connection-form {
   display: grid;
-  gap: 18px;
+  gap: 22px;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
-  padding: 20px;
+  padding-right: 8px;
   overflow-x: hidden;
   overflow-y: auto;
   align-content: start;
   scrollbar-gutter: stable;
 }
 
-/* 表单按「连接目标 / 认证 / 高级」分组，靠留白与小标题建立节奏，而非边框。 */
+/* 表单按「连接目标 / 认证 / 高级」分组。分组线退役——组内 12px、组间 22px 的留白差
+   本身就是分隔信号；标题保持 800 字重压住每组开头。 */
 .form-group {
   display: grid;
   gap: 12px;
@@ -4329,20 +4529,10 @@ h3 {
 
 .form-group-title {
   margin: 0;
-  padding-bottom: 8px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 800;
-}
-
-.connection-form .panel-header {
-  margin-bottom: 4px;
-}
-
-.connection-form .secondary-button,
-.connection-form .primary-button {
-  height: 34px;
+  letter-spacing: 0.02em;
 }
 
 .field-row {
@@ -4370,20 +4560,31 @@ h3 {
   letter-spacing: 0.02em;
 }
 
+/* 输入控件＝填充式「控件层」：底色离纸面一步，方向按主题——浅色低 3.2 个明度点
+   （挖下去），暗色高 4.5 个明度点（浮起来），因为暗色纸面下方已经没有量程可用。
+   靠这一步色差读出「可输入」，取代描边。保留透明边框而非 border:0，是为了让聚焦态
+   继续复用 border-color，并保证与同行按钮的盒模型完全不变。 */
 input {
   width: 100%;
   height: 36px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-inset);
   outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 
+/* 聚焦一律「再亮一步」(control-lift) + accent 描边 + 焦点光环，三重信号，无障碍不打折。
+   浅色下这一步正好落回纸面，暗色下则越过纸面继续提亮——两边都读作「被点亮了」。 */
 input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+  background: var(--control-lift);
+  box-shadow: var(--focus-glow);
 }
 
 .file-input-row {
@@ -4401,10 +4602,10 @@ input:focus {
   min-height: 72px;
   padding: 9px 10px;
   overflow: hidden;
-  border: 1px dashed var(--border-strong);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   color: var(--text);
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
   text-align: left;
   cursor: pointer;
   transition:
@@ -4416,8 +4617,7 @@ input:focus {
 }
 
 .file-dropzone:hover:not(:disabled) {
-  border-color: color-mix(in oklch, var(--accent) 52%, var(--border));
-  background: color-mix(in oklch, var(--accent) 4%, var(--surface));
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface-inset));
 }
 
 .file-dropzone:focus-visible {
@@ -4426,24 +4626,20 @@ input:focus {
   box-shadow: var(--focus-glow);
 }
 
-.file-dropzone.has-file {
-  border-style: solid;
-  border-color: color-mix(in oklch, var(--accent) 34%, var(--border));
-  background: var(--surface);
-}
+/* 已选中刻意不换底色：accent 染底在两个主题里方向相反，会让「槽有多深」翻转；
+   而 hover / 拖拽那两个态是「高亮」不是「深度」，翻转无所谓，所以它们照旧染底。
+   「装了东西」由图标染色 + 文件名 + 「替换」标签承担，够读了。 */
 
 .file-dropzone.is-dragging {
-  border-style: solid;
   border-color: var(--accent);
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 9%, var(--surface));
+  background: color-mix(in oklch, var(--accent) 18%, var(--surface-inset));
   box-shadow: var(--focus-glow);
   transform: translateY(-1px);
 }
 
 .file-dropzone.has-error {
-  border-color: var(--danger-border);
-  background: color-mix(in oklch, var(--danger) 5%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface-inset));
 }
 
 .file-dropzone:disabled {
@@ -4459,7 +4655,7 @@ input:focus {
   height: 38px;
   border-radius: 7px;
   color: var(--text-muted);
-  background: var(--surface-muted);
+  background: var(--control-lift);
   transition:
     color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out),
@@ -4469,7 +4665,7 @@ input:focus {
 .file-dropzone.has-file .file-dropzone-icon,
 .file-dropzone.is-dragging .file-dropzone-icon {
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 12%, var(--surface));
+  background: color-mix(in oklch, var(--accent) 12%, var(--control-lift));
 }
 
 .file-dropzone.is-dragging .file-dropzone-icon {
@@ -4574,10 +4770,13 @@ input:focus {
   font-weight: 600;
 }
 
+/* 复选框走系统原生渲染：显式清掉上面 input 规则的凹槽底与透明描边，只留 accent-color。 */
 .checkbox-field input {
   width: 14px;
   height: 14px;
   margin: 0;
+  border: 0;
+  background: transparent;
   accent-color: var(--accent);
 }
 
@@ -4601,10 +4800,13 @@ input:focus {
   background: var(--accent-strong);
 }
 
+/* 按钮与输入控件的分工不再是「凸 vs 凹」——暗色下两者都在纸面之上。真正的分工是：
+   按钮离纸面更远一步(muted)并保留一圈发丝描边，输入控件离得近一步(inset)且无描边。
+   描边保持发丝级，避免在已经无边框的页面里成为最重的一条线。 */
 .secondary-button {
   height: 34px;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-hairline);
   border-radius: var(--radius-md);
   color: var(--text);
   background: var(--surface-muted);
@@ -4617,9 +4819,11 @@ input:focus {
     transform var(--duration-fast) var(--ease-out);
 }
 
+/* hover 一律「再亮一步」：此前暗色下 rest 26.5% → hover 24%(纸面) 是往暗走的，
+   等于 hover 让按钮更不显眼。改用 control-lift 后两个主题都是提亮。 */
 .secondary-button:hover {
-  border-color: var(--border-strong);
-  background: var(--surface);
+  border-color: var(--border);
+  background: var(--control-lift);
 }
 
 .danger-button {
@@ -4628,7 +4832,7 @@ input:focus {
   border: 1px solid var(--danger-border);
   border-radius: var(--radius-md);
   color: var(--danger-text);
-  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface));
   font-size: 13px;
   font-weight: 700;
   transition:
@@ -4640,7 +4844,7 @@ input:focus {
 
 .danger-button:hover {
   border-color: var(--danger-border);
-  background: color-mix(in oklch, var(--danger) 20%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 20%, var(--surface));
 }
 
 /* 按压反馈：与已上线的 .deploy-history-item 一致，轻微下沉 1px。 */
@@ -4733,6 +4937,10 @@ input:focus {
   white-space: nowrap;
 }
 
+/* 分段控件 = 控件层槽 + 更亮一档的滑块。槽底 inset、滑块 control-lift，差 3.2(浅)/4.5(暗)
+   个明度点，去掉外描边与滑块投影后仍成形。滑块必须用 control-lift 而不是 surface：
+   暗色下 surface 比槽还暗，选中态会看起来是凹进去的。
+   顺带：去掉 1px 边框后内容盒正好 31px，与 button 高度对齐（此前 29px 会被裁掉 2px）。 */
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4740,9 +4948,9 @@ input:focus {
   gap: 0;
   height: 37px;
   padding: 3px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 8px;
-  background: var(--surface-muted);
+  background: var(--surface-inset);
   overflow: hidden;
 }
 
@@ -4754,8 +4962,7 @@ input:focus {
   left: 3px;
   width: calc((100% - 6px) / 2);
   border-radius: 6px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px var(--shadow-color);
+  background: var(--control-lift);
   transform: translateX(0);
   transition: transform 180ms var(--ease-out);
 }
@@ -4785,8 +4992,9 @@ input:focus {
 }
 
 .status-panel {
+  min-width: 0;
+  min-height: 0;
   height: 100%;
-  padding: 20px;
   overflow: hidden;
 }
 
@@ -4801,15 +5009,14 @@ input:focus {
   min-height: 0;
 }
 
-/* 交互式终端：整片浅色 surface 撑满内容区，无卡片边框与阴影 */
+/* 与其余几页同构：顶栏是纸面上的一行，下面直接就是终端。整页只有一层底色。
+   此前顶栏与终端同色、中间靠一条 1px 分开；那条线退役后由留白接手。 */
 .ssh-terminal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border-radius: 12px;
-  background: var(--terminal-stage);
 }
 
 .terminal-topbar {
@@ -4819,8 +5026,7 @@ input:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding: 0 0 12px;
 }
 
 .terminal-identity {
@@ -4840,12 +5046,12 @@ input:focus {
 
 .terminal-status-dot.ok {
   background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 16%, transparent);
 }
 
 .terminal-status-dot.pending {
   background: var(--warning);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--warning) 18%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--warning) 18%, transparent);
   animation: terminal-pending-pulse 1.5s ease-in-out infinite;
 }
 
@@ -4853,10 +5059,10 @@ input:focus {
 @keyframes terminal-pending-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--warning) 45%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--warning) 45%, transparent);
   }
   60% {
-    box-shadow: 0 0 0 5px color-mix(in oklch, var(--warning) 0%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in oklab, var(--warning) 0%, transparent);
   }
 }
 
@@ -4878,7 +5084,7 @@ input:focus {
 
 .terminal-status-dot.danger {
   background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 16%, transparent);
 }
 
 .terminal-status-dot.idle {
@@ -4896,7 +5102,7 @@ input:focus {
 }
 
 .terminal-target.muted {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-family: var(--font-sans);
 }
 
@@ -4913,10 +5119,10 @@ input:focus {
   justify-content: center;
   width: 18px;
   height: 18px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 50%;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-muted);
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
@@ -4928,9 +5134,8 @@ input:focus {
 
 .terminal-help-trigger:hover,
 .terminal-help:focus-within .terminal-help-trigger {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  color: var(--accent-strong);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface));
 }
 
 .terminal-help-popover {
@@ -4940,8 +5145,8 @@ input:focus {
   z-index: 30;
   width: 300px;
   padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: 0 14px 34px var(--shadow-color);
   opacity: 0;
@@ -4970,10 +5175,9 @@ input:focus {
   transform: translateY(0);
 }
 
+/* 两段之间那条 1px 退役：16px 留白就是分隔信号，与表单分组同一个处方。 */
 .help-section + .help-section {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+  margin-top: 16px;
 }
 
 .help-section-title {
@@ -4989,7 +5193,7 @@ input:focus {
 }
 
 .help-section-title span {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 10px;
   font-weight: 600;
 }
@@ -5008,7 +5212,12 @@ input:focus {
 }
 
 .help-cmd:hover {
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface));
+}
+
+/* 说明文字压在 hover 染底上会掉到 4.46；hover 本来就是「这一条被点亮」，说明跟着上一档。 */
+.help-cmd:hover span {
+  color: var(--text-mid);
 }
 
 .help-cmd code {
@@ -5021,7 +5230,7 @@ input:focus {
 
 .help-cmd span {
   margin-left: auto;
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 11px;
   white-space: nowrap;
 }
@@ -5033,13 +5242,15 @@ input:focus {
   padding: 4px 8px;
 }
 
+/* 键帽＝纸面上的一档控件层（浅色挖下去、暗色浮起来），描边退役。
+   此前的 --surface-subtle 在暗色下(21) 比气泡纸面(24) 还暗一步，方向反了。 */
 .help-shortcut kbd {
   flex: 0 0 auto;
   min-width: 62px;
   padding: 2px 7px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 5px;
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
   color: var(--text);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -5068,31 +5279,44 @@ input:focus {
   gap: 8px;
 }
 
+/* 状态文字此前独自待在右边、与它自己的圆点隔着整条顶栏。现在跟圆点并排，
+   顶栏回到「状态在左、动作在右」——与其余几页的页尾操作条同一个读法。 */
 .terminal-state-text {
-  color: var(--text-muted);
+  flex: 0 0 auto;
+  color: var(--text);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
+.terminal-state-text + .terminal-target::before {
+  content: '·';
+  margin-right: 8px;
+  color: var(--text-faint);
+}
+
+/* 顶栏现在坐在纸面上，按钮就走纸面的那一档控件层（同全局 .secondary-button）：
+   描边退役，hover 一律「再亮一步」到 --control-lift，两个主题都是提亮。
+   此前 rest 用 --surface，与顶栏同色，等于按钮只有描边没有身体。 */
 .terminal-tool-button {
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-muted);
   font-size: 12px;
   font-weight: 600;
   transition:
     border-color 140ms ease,
-    background 140ms ease;
+    background-color 140ms ease;
 }
 
 .terminal-tool-button:hover {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 7%, transparent);
+  background: var(--control-lift);
 }
 
+/* 终端与纸面同色：这页只有「页面」一层，终端不再自成一档底色。
+   与页边的距离由这圈内边距给出，不靠色差。 */
 .terminal-stage {
   position: relative;
   min-height: 0;
@@ -5144,8 +5368,8 @@ input:focus {
 .terminal-overlay-button {
   height: 34px;
   padding: 0 18px;
-  border: 1px solid var(--accent);
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-md);
   color: var(--text-on-fill);
   background: var(--accent);
   font-size: 13px;
@@ -5173,12 +5397,12 @@ input:focus {
 .command-stat {
   display: inline-flex;
   align-items: center;
-  min-height: 28px;
+  min-height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 99px;
   color: var(--text-muted);
-  background: var(--bg);
+  background: var(--surface-inset);
   font-size: 12px;
   font-weight: 600;
 }
@@ -5251,7 +5475,7 @@ input:focus {
   left: 4px;
   width: calc((100% - 8px) / 3);
   border-radius: 7px;
-  background: var(--surface);
+  background: var(--control-lift);
   box-shadow: var(--shadow-sm);
   transition: transform var(--duration-base) var(--ease-out);
 }
@@ -5302,43 +5526,28 @@ input:focus {
   font-variant-numeric: tabular-nums;
 }
 
-.package-panel {
+/* 左栏＝表单本体。组间 22px、组内 12px 的留白差本身就是分区信号（同 .connection-form）。 */
+.package-fields,
+.deploy-fields-col,
+.frontend-fields-col {
   display: grid;
-  gap: 10px;
-  height: 100%;
-  padding: 14px;
-  overflow: hidden;
-}
-
-.package-form-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.package-preview-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.deploy-panel {
-  display: grid;
-  gap: 10px;
-  height: 100%;
-  padding: 14px;
-  overflow: hidden;
-}
-
-.deploy-form-panel {
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.deploy-preview-panel {
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.package-fields {
-  display: grid;
-  gap: 7px;
+  gap: 22px;
   align-content: start;
+  min-width: 0;
   min-height: 0;
+  height: 100%;
+  padding-right: 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* 组标题行：标题在左、组内开关在右，与状态栏的 .status-section-head 同一个惯用法。 */
+.form-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .template-picker-row {
@@ -5356,14 +5565,18 @@ input:focus {
   min-width: 0;
 }
 
+/* 告警块与 .inline-delete-confirm 同处方：描边退役，染底提到能独立读出的浓度。
+   状态混色一律走 oklab——oklch 会插值色相角，把接近中性的混色拖到别的色系去。
+   浓度与 .inline-delete-confirm 对齐在 12%：再浓一点，暗色下染底会追上 --warning-text
+   自身的明度，标题反而读不出来（20% 时只剩 4.19:1）。 */
 .deploy-warning-list {
   display: grid;
   gap: 7px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in oklch, var(--warning) 32%, transparent);
-  border-radius: 7px;
+  border: 0;
+  border-radius: var(--radius-md);
   color: var(--warning-text);
-  background: color-mix(in oklch, var(--warning) 10%, var(--surface));
+  background: color-mix(in oklab, var(--warning) 12%, var(--surface));
 }
 
 .deploy-warning-head {
@@ -5435,7 +5648,6 @@ input:focus {
   gap: 10px;
   margin-top: 6px;
   padding: 10px 0 2px;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .service-template-copy-actions {
@@ -5449,12 +5661,15 @@ input:focus {
   line-height: 1.4;
 }
 
+/* 危险确认从「一条红线」改成一整块淡红染底：色差承担分区后，
+   一条线太容易被当成普通分隔略过，而这是需要停一下的地方。 */
 .inline-delete-confirm {
   display: grid;
   gap: 9px;
-  margin-top: 6px;
-  padding: 10px 0 2px;
-  border-top: 1px solid color-mix(in oklch, var(--danger) 26%, var(--border-subtle));
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
   animation: inline-delete-in var(--duration-base) var(--ease-out);
 }
 
@@ -5473,7 +5688,7 @@ input:focus {
   height: 28px;
   border-radius: var(--radius-sm);
   color: var(--danger-text);
-  background: color-mix(in oklch, var(--danger) 11%, transparent);
+  background: color-mix(in oklab, var(--danger) 11%, transparent);
 }
 
 .inline-delete-text {
@@ -5533,8 +5748,7 @@ input:focus {
 
 .inline-delete-cancel:hover {
   color: var(--text);
-  border-color: var(--border);
-  background: var(--surface-muted);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .inline-delete-submit {
@@ -5544,8 +5758,8 @@ input:focus {
 }
 
 .inline-delete-submit:hover {
-  border-color: color-mix(in oklch, var(--danger) 82%, var(--text));
-  background: color-mix(in oklch, var(--danger) 82%, var(--text));
+  border-color: color-mix(in oklab, var(--danger) 82%, var(--text));
+  background: color-mix(in oklab, var(--danger) 82%, var(--text));
 }
 
 .inline-delete-cancel:focus-visible,
@@ -5597,185 +5811,67 @@ input:focus {
   }
 }
 
-.package-form-body {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 8px;
-  min-height: 0;
-}
-
-.deploy-form-body {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  min-height: 0;
-}
-
-.package-form-body .package-fields {
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 4px;
-  padding-bottom: 8px;
-  scrollbar-gutter: stable;
-}
-
-.deploy-fields {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
-}
-
-.deploy-package-picker-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  min-width: 0;
-}
-
-.deploy-package-picker-row .field {
-  min-width: 0;
-}
-
-.deploy-package-picker-row input {
-  font-family: var(--font-mono);
-  font-size: 12px;
-}
-
-.deploy-package-picker-row .secondary-button {
-  min-width: 56px;
-}
-
-.deploy-package-summary {
-  display: grid;
-  gap: 10px;
-  padding: 13px;
-  border: 1px solid color-mix(in oklch, var(--accent) 34%, transparent);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 5%, transparent);
-  will-change: transform, opacity;
-}
-
-.deploy-package-summary.empty {
-  border-color: var(--border);
-  background: var(--bg);
-}
-
-.deploy-summary-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
+/* 组标题右侧的两枚读数胶囊：与 .state-pill 同一配方——无描边、控件层染底。
+   accent 转中性后 10% 的透明染底在纸上几乎读不出来，改为压在 inset 上并提到 16%。 */
 .deploy-source-pill {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
   height: 24px;
   padding: 0 9px;
-  border: 1px solid color-mix(in oklch, var(--accent) 34%, transparent);
+  border: 0;
   border-radius: 999px;
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface-inset));
   font-size: 12px;
   font-weight: 700;
 }
 
-.deploy-summary-main {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
+/* 这一组里标签、分段控件、运行时路由三样叠在一起，比普通字段多一口气。
+   特意加一层 .frontend-fields-col 是为了压过该列统一的 .field { gap: 5px }。 */
+.frontend-fields-col .frontend-nginx-mode {
+  gap: 8px;
 }
 
-.deploy-summary-main strong {
-  overflow: hidden;
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.frontend-nginx-segmented {
+  width: min(100%, 360px);
 }
 
-.deploy-summary-main small {
-  overflow: hidden;
-  color: var(--text-mid);
-  font-size: 12px;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.frontend-nginx-segmented.is-custom .segment-thumb {
+  transform: translateX(100%);
 }
 
-.deploy-summary-footer {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
-  min-width: 0;
+.frontend-nginx-segmented button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
-.deploy-summary-metrics {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(94px, 0.42fr);
-  gap: 6px;
-  min-width: 0;
-}
-
-.deploy-summary-metrics span {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  min-height: 36px;
-  padding: 7px 8px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface-subtle);
-}
-
-.deploy-summary-metrics small {
-  overflow: hidden;
+.frontend-nginx-runtime-route {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 20px;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.15;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
+}
+
+.frontend-nginx-runtime-route > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.3;
   white-space: nowrap;
 }
 
-.deploy-summary-metrics b {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.frontend-upload-view .deploy-summary-metrics {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.frontend-archive-summary .deploy-summary-main strong {
-  font-size: 13px;
-}
-
-.frontend-keep-archive {
-  align-self: end;
-  min-height: 36px;
-  padding: 0 2px;
-}
-
-.frontend-nginx-section {
-  gap: 9px;
+/* 分隔箭头比两端的运行时标签更弱一档。原先写的 --text-subtle 从未定义，
+   这条声明一直是空转，箭头和标签同色。 */
+.frontend-nginx-runtime-route > svg {
+  flex: 0 0 auto;
+  color: var(--text-soft);
 }
 
 .frontend-restart-track {
@@ -5795,11 +5891,16 @@ input:focus {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--surface-raised);
+  background: var(--switch-knob);
   box-shadow: var(--shadow-sm);
-  transition: transform var(--duration-fast) var(--ease-out);
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
 }
 
+/* 发布后动作开关＝一块控件层槽，与 .deploy-check-switch 同处方：描边退役，
+   hover / 开启一律 accent 染底压在同一档槽上——accent 在两个主题里互为镜像，
+   不像纸面叠加那样浅色提亮、暗色压暗。 */
 .frontend-restart-control {
   display: grid;
   grid-template-columns: 32px minmax(0, 1fr) 25px;
@@ -5807,10 +5908,10 @@ input:focus {
   gap: 9px;
   min-height: 50px;
   padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   color: var(--text);
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
   text-align: left;
   transition:
     border-color var(--duration-fast) var(--ease-out),
@@ -5818,13 +5919,11 @@ input:focus {
 }
 
 .frontend-restart-control:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--surface-muted);
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset));
 }
 
 .frontend-restart-control.active {
-  border-color: color-mix(in oklch, var(--accent) 30%, var(--border));
-  background: color-mix(in oklch, var(--accent) 5%, var(--surface-subtle));
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface-inset));
 }
 
 .frontend-restart-control:focus-visible {
@@ -5843,9 +5942,13 @@ input:focus {
 }
 
 .frontend-restart-control.active .frontend-restart-track i {
+  background: var(--text-on-fill);
   transform: translateX(11px);
 }
 
+/* 图标块骑在开关的控件层底上。此前固定 --surface：浅色下(99%) 比槽亮，
+   暗色下(24%) 却比槽(28.5%) 暗，同一块图标一凸一凹——与旋钮当初同一种反转。
+   改用 --control-lift，那正是「压在控件填充之上」的那一档。 */
 .frontend-restart-icon {
   display: grid;
   place-items: center;
@@ -5853,7 +5956,7 @@ input:focus {
   height: 32px;
   border-radius: 7px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--control-lift);
 }
 
 .frontend-restart-control.active .frontend-restart-icon {
@@ -5883,6 +5986,14 @@ input:focus {
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+/* 副文在静态槽上是 4.87:1，但 accent 染底一压就掉线（hover 4.23 / 开启 3.80）。
+   hover 与开启时跟着上一档——和 .deploy-check-switch 文案随态加重是同一个动作。 */
+.frontend-restart-control:hover:not(:disabled) .frontend-restart-copy small,
+.frontend-restart-control.active .frontend-restart-copy small {
+  color: var(--text-mid);
 }
 
 .frontend-restart-command input {
@@ -5896,12 +6007,15 @@ input:focus {
   line-height: 1.35;
 }
 
+/* 出错的输入仍然是个输入：染底压在控件层上，而不是压回纸面——压回纸面等于把
+   「这里可以输入」的那一步色差抹掉。4% 在两个主题下都几乎读不出来，提到 10%。 */
 .frontend-restart-command.is-invalid input {
   border-color: var(--danger-border);
-  background: color-mix(in oklch, var(--danger) 4%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface-inset));
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .frontend-nginx-segmented .segment-thumb,
   .frontend-restart-track,
   .frontend-restart-track i,
   .frontend-restart-control {
@@ -5909,102 +6023,20 @@ input:focus {
   }
 }
 
-.frontend-upload-preview-panel .package-meta-grid {
-  align-content: start;
-}
-
-.deploy-confirm-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--border);
-}
-
-.deploy-confirm-strip > span {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  padding: 7px 8px;
-  background: var(--surface-subtle);
-}
-
-.deploy-confirm-strip small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.deploy-confirm-strip b {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 11.5px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.deploy-section {
-  display: grid;
-  gap: 10px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-}
-
-.deploy-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  min-width: 0;
-}
-
-.deploy-section-header > div,
-.advanced-toggle > span {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  text-align: left;
-}
-
-.deploy-section-header strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .deploy-history-picks {
   display: grid;
   gap: 8px;
 }
 
-.field-prompt {
-  color: var(--text-mid);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
 .deploy-count-pill {
   display: inline-flex;
   align-items: center;
-  height: 26px;
+  height: 24px;
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-inset);
   font-size: 12px;
   font-weight: 700;
   white-space: nowrap;
@@ -6015,18 +6047,20 @@ input:focus {
   gap: 7px;
 }
 
+/* 可选项＝控件层槽，不是卡片：底色离纸面一步就够读出「这里可以点」，描边退役。
+   保留透明边框而非 border:0，是为了让 hover/选中继续复用 border-color 而不改盒模型。 */
 .deploy-history-trigger,
 .deploy-history-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
-  min-height: 54px;
+  min-height: 52px;
   padding: 9px 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-inset);
   text-align: left;
   transition:
     border-color 160ms ease,
@@ -6036,35 +6070,33 @@ input:focus {
 
 .deploy-history-trigger {
   width: 100%;
-  background: var(--surface-subtle);
 }
 
+/* 展开态 / hover / 已选：一律 accent 染底压在同一档槽上。accent 在两个主题里互为镜像，
+   所以「被点亮了」这个信号两边都成立，不像纸面叠加那样浅色提亮、暗色压暗。 */
 .deploy-history-trigger[aria-expanded='true'] {
-  border-color: color-mix(in oklch, var(--accent) 36%, transparent);
-  background: color-mix(in oklch, var(--accent) 6%, transparent);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-inset));
 }
 
 .deploy-history-trigger .deploy-history-side b {
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface-inset));
 }
 
 .deploy-history-picks.expanded .deploy-count-pill {
   color: var(--accent-strong);
-  border-color: color-mix(in oklch, var(--accent) 30%, transparent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, var(--surface-inset));
 }
 
 .deploy-history-trigger:hover,
 .deploy-history-item:hover,
 .deploy-history-item.active {
-  border-color: color-mix(in oklch, var(--accent) 42%, transparent);
-  background: color-mix(in oklch, var(--accent) 5%, transparent);
+  background: color-mix(in oklch, var(--accent) 10%, var(--surface-inset));
 }
 
 .deploy-history-trigger.active,
 .deploy-history-item.active {
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
 }
 
 .deploy-history-trigger:active,
@@ -6110,15 +6142,15 @@ input:focus {
   height: 22px;
   padding: 0 7px;
   border-radius: 999px;
-  color: var(--text-soft);
-  background: var(--surface);
+  color: var(--text-muted);
+  background: var(--control-lift);
   font-size: 11px;
   font-weight: 700;
 }
 
 .deploy-history-item.active .deploy-history-side b {
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 12%, transparent);
+  background: color-mix(in oklch, var(--accent) 20%, var(--surface-inset));
 }
 
 .advanced-toggle {
@@ -6132,20 +6164,23 @@ input:focus {
 .advanced-toggle b {
   display: inline-flex;
   align-items: center;
-  height: 26px;
+  height: 24px;
   padding: 0 9px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text-muted);
-  background: var(--bg);
+  background: var(--surface-inset);
   font-size: 11px;
   font-weight: 700;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
 }
 
+/* hover「再亮一步」，与次要按钮 hover 同一档，两个主题都是提亮。 */
 .advanced-toggle:hover b {
   color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--surface);
+  background: var(--control-lift);
 }
 
 .deploy-advanced-body {
@@ -6166,78 +6201,11 @@ input:focus {
   transform: translateY(-4px);
 }
 
-.deploy-actions {
-  margin-top: 4px;
-}
-
-.deploy-action-status {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-width: 0;
-}
-
-.deploy-action-status > span {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  margin-top: 6px;
-  border-radius: 999px;
-  background: var(--text-soft);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--text-soft) 14%, transparent);
-}
-
-.deploy-action-status.active > span {
-  background: var(--accent);
-  animation: deploy-status-pulse 1100ms ease-in-out infinite;
-}
-
-.deploy-action-status.ok > span {
-  background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
-}
-
-.deploy-action-status.failed > span {
-  background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 14%, transparent);
-}
-
-.deploy-action-status .command-hint {
-  min-width: 0;
-}
-
-.package-actions {
-  display: grid;
-  gap: 6px;
-  position: relative;
-  z-index: 1;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
-}
-
-@keyframes deploy-status-pulse {
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
-  }
-
-  50% {
-    transform: scale(1.18);
-    box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 8%, transparent);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .deploy-collapse-enter-active,
   .deploy-collapse-leave-active,
   .deploy-history-item {
     transition-duration: 0.01ms;
-  }
-
-  .deploy-action-status.active > span {
-    animation: none;
   }
 }
 
@@ -6247,18 +6215,18 @@ input:focus {
   gap: 10px;
   min-width: 0;
   padding: 11px 12px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-md);
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
 }
 
+/* 运行 / 失败态改由染底表达，取代描边换色。 */
 .run-progress.running {
-  border-color: color-mix(in oklch, var(--accent) 30%, transparent);
-  background: color-mix(in oklch, var(--accent) 5%, var(--surface-subtle));
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-inset));
 }
 
 .run-progress.failed {
-  border-color: color-mix(in oklch, var(--danger) 26%, transparent);
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface-inset));
 }
 
 .run-progress-head {
@@ -6278,17 +6246,32 @@ input:focus {
 
 .run-progress-dot.running {
   background: var(--accent);
-  animation: deploy-status-pulse 1100ms ease-in-out infinite;
+  animation: run-progress-pulse 1100ms ease-in-out infinite;
+}
+
+/* 原名 deploy-status-pulse，当初写给远程部署页动作条上的状态点。那颗点已被
+   页尾操作条的状态胶囊取代，动画只剩 RunProgress 在用，随之改名归位。 */
+@keyframes run-progress-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+  }
+
+  50% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--accent) 8%, transparent);
+  }
 }
 
 .run-progress-dot.ok {
   background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 16%, transparent);
 }
 
 .run-progress-dot.failed {
   background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 16%, transparent);
 }
 
 .run-progress-text {
@@ -6477,48 +6460,49 @@ input:focus {
   }
 }
 
-.advanced-box {
-  display: grid;
-  gap: 7px;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-}
-
-.advanced-header,
-.user-options-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
+/* Java 版本＝多档分段控件：整条是一条控件层槽，芯片透明，选中的那个提到 control-lift。
+   与 .segmented 完全同构，所以「选中」在全站是同一个动作，而不是这里描边那里染底。 */
 .version-picker {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(86px, 1.2fr);
-  gap: 5px;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--surface-inset);
 }
 
 .version-chip {
   height: 30px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
+  border: 0;
+  border-radius: 6px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: transparent;
   font-size: 12px;
   font-weight: 700;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
 }
 
-.version-chip:hover,
+.version-chip:hover {
+  color: var(--text);
+}
+
 .version-chip.selected {
   color: var(--text);
-  border-color: color-mix(in oklch, var(--accent) 40%, transparent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
+  background: var(--control-lift);
 }
 
-.version-input {
+/* 自定义档就长在同一条凹槽里：静止透明（读作「还剩一格可以自己填」），
+   聚焦时抬回纸面 + 焦点环，落点和芯片选中后完全一致。 */
+.package-fields .version-picker .version-input {
   height: 30px;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.package-fields .version-picker .version-input:focus {
+  background: var(--control-lift);
 }
 
 .compact-row {
@@ -6526,30 +6510,37 @@ input:focus {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
-.advanced-two-lines {
-  display: grid;
-  gap: 7px;
-}
-
-.package-form-panel input {
+/* 左栏字段比服务器页多一倍，所以控件压到 32px；操作条上的按钮不在这里，保持全局 34px。 */
+.package-fields input,
+.package-fields .select-input,
+.deploy-fields-col input,
+.deploy-fields-col .select-input,
+.frontend-fields-col input,
+.frontend-fields-col .select-input {
   height: 32px;
 }
 
-.package-form-panel .select-input {
+.package-fields .primary-button,
+.package-fields .secondary-button,
+.deploy-fields-col .primary-button,
+.deploy-fields-col .secondary-button,
+.frontend-fields-col .primary-button,
+.frontend-fields-col .secondary-button {
   height: 32px;
 }
 
-.package-form-panel .primary-button,
-.package-form-panel .secondary-button {
-  height: 32px;
-}
-
-.package-form-panel .field {
+.package-fields .field,
+.deploy-fields-col .field,
+.frontend-fields-col .field {
   gap: 5px;
 }
 
-.package-form-panel .field span {
-  font-size: 11px;
+/* 表单里的裸 button（投放区、历史项、开关、高级选项折叠头）没有按钮类名，
+   全局焦点环覆盖不到，这里补一圈键盘焦点轮廓。 */
+.deploy-fields-col button:focus-visible,
+.frontend-fields-col button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .dockerfile-modal {
@@ -6568,8 +6559,8 @@ input:focus {
   width: min(1080px, 100%);
   height: min(720px, 100%);
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 14px;
   background: var(--surface);
   box-shadow: 0 24px 60px var(--scrim-strong);
 }
@@ -6580,24 +6571,27 @@ input:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 0 16px;
+  padding: 0 18px;
 }
 
+/* 头尾条改由色差承担：与 body 拉开一档控件层色差，横线退役，
+   同时给会滚动的 body 一个上下锚点。 */
 .dockerfile-modal-header {
-  border-bottom: 1px solid var(--border);
+  background: var(--surface-inset);
 }
 
 .dockerfile-modal-footer {
   justify-content: flex-end;
-  border-top: 1px solid var(--border);
+  background: var(--surface-inset);
 }
 
+/* 中缝拉到 28px：识别结果那一栏去掉外框后，靠留白而不是描边来分区。 */
 .dockerfile-modal-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 14px;
+  gap: 28px;
   min-height: 0;
-  padding: 14px 16px;
+  padding: 16px 18px 18px;
 }
 
 .dockerfile-import-main {
@@ -6616,10 +6610,10 @@ input:focus {
   height: 100%;
   min-height: 360px;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-inset);
   outline: none;
   resize: none;
   font-family: var(--font-mono);
@@ -6629,19 +6623,19 @@ input:focus {
 
 .dockerfile-import-textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+  background: var(--control-lift);
+  box-shadow: var(--focus-glow);
 }
 
+/* 识别结果不是一块下沉板：模态框里同样只允许纸面 + 控件凹陷两个色调，
+   这一栏的身份交给小标题和 28px 中缝。 */
 .dockerfile-import-summary {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
+  align-content: start;
   min-width: 0;
   min-height: 0;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
 }
 
 .import-summary-list {
@@ -6652,14 +6646,14 @@ input:focus {
   overflow: auto;
 }
 
+/* 卡片套卡片退役：识别出的每一项就是一行标签 + 值，与 .preview-row 同一个读法。 */
 .import-summary-item {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
-  padding: 9px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--surface);
+  padding: 7px 2px;
+  border: 0;
+  background: transparent;
 }
 
 .import-summary-item span {
@@ -6676,13 +6670,7 @@ input:focus {
   white-space: nowrap;
 }
 
-.deploy-form-panel .field span {
-  color: var(--text-mid);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.deploy-form-panel .field .field-help-label,
+.field .field-help-label,
 .preview-row .field-help-label {
   cursor: help;
   text-decoration: underline dotted color-mix(in oklch, var(--text-muted) 70%, transparent);
@@ -6782,18 +6770,19 @@ input:focus {
   }
 }
 
+/* 开关本体＝一条控件层槽，与同一行的 input / select 同底色同高度，读作同一类控件。 */
 .deploy-check-switch {
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-inset);
   font-size: 13px;
   font-weight: 600;
   text-align: left;
@@ -6801,14 +6790,23 @@ input:focus {
 }
 
 .deploy-check-switch:hover {
-  border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
   color: var(--text);
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-inset));
 }
 
 .deploy-check-switch.active {
-  border-color: color-mix(in oklch, var(--accent) 55%, var(--border));
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+  background: color-mix(in oklch, var(--accent) 14%, var(--surface-inset));
+}
+
+/* .field span 是字段标签的处方（11px、静音色），但它同样命中开关内部的状态文案，
+   并以显式声明压过 .active 从按钮继承下来的 accent 色——开启后文字其实没变。
+   这里把开关内的文案交还给开关自己。 */
+.field .deploy-check-switch > span:first-child {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
 .deploy-check-switch-track {
@@ -6821,6 +6819,8 @@ input:focus {
   transition: background-color 160ms ease;
 }
 
+/* 旋钮此前固定用 --surface：浅色下(99%) 比轨道(79%) 亮，暗色下(24%) 却比轨道(43%) 暗，
+   同一颗滑块在两个主题里一凸一凹。改用 --switch-knob，两边都比轨道亮。 */
 .deploy-check-switch-track i {
   position: absolute;
   top: 3px;
@@ -6828,79 +6828,39 @@ input:focus {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: var(--surface);
+  background: var(--switch-knob);
   box-shadow: var(--shadow-sm);
-  transition: transform 160ms ease;
+  transition: transform 160ms ease, background-color 160ms ease;
 }
 
 .deploy-check-switch.active .deploy-check-switch-track {
   background: var(--accent);
 }
 
+/* 开启后旋钮骑在 accent 填充上：暗色的 accent 是近白，白旋钮会糊掉，
+   所以换成填充之上的对比档（浅色近白 / 暗色近黑），与主按钮的文字同一个 token。 */
 .deploy-check-switch.active .deploy-check-switch-track i {
+  background: var(--text-on-fill);
   transform: translateX(14px);
 }
 
-.deploy-form-panel button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.package-form-panel .command-hint {
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.deploy-form-panel input,
-.deploy-form-panel .secondary-button,
-.deploy-form-panel .primary-button,
-.deploy-form-panel .select-input {
-  height: 36px;
-  font-size: 13px;
-}
-
-.deploy-form-panel .command-hint {
-  color: var(--text-mid);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.deploy-form-panel .template-description {
-  color: var(--text-mid);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.deploy-form-panel input,
-.deploy-form-panel .select-input {
-  background-color: var(--surface);
-}
-
-.deploy-form-panel input[readonly] {
+/* 只读输入＝「离纸面只走半步」：比可编辑的槽浅一点，读作不可交互，但仍看得出是个字段。
+   此前固定 --surface-subtle，暗色下(21%) 反而比可编辑槽(28.5%) 离纸面更远，方向是反的。 */
+.frontend-fields-col input[readonly] {
   color: var(--text);
-  background: var(--surface-subtle);
+  background: color-mix(in oklab, var(--surface-inset) 55%, var(--surface));
 }
 
-.deploy-form-panel .secondary-button {
-  background: var(--surface-subtle);
-}
-
-.deploy-form-panel .secondary-button:hover {
-  background: var(--surface);
-}
-
-.deploy-file-row {
-  grid-template-columns: minmax(0, 1fr) 88px;
-}
-
+/* 下拉与多行输入跟随 input 走同一档控件层：同一档底色、同一套聚焦反馈。
+   否则同一行里 input 是填充的、select 是描边的，两种控件语言并排出现。 */
 .deploy-textarea,
 select,
 .select-input {
   width: 100%;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text);
-  background-color: var(--surface);
+  background-color: var(--surface-inset);
   outline: none;
 }
 
@@ -6932,8 +6892,7 @@ select:hover:not(:disabled),
 .select-input:hover:not(:disabled) {
   --select-arrow: var(--text);
 
-  border-color: var(--text-soft);
-  background-color: var(--surface);
+  background-color: color-mix(in oklch, var(--accent) 8%, var(--surface-inset));
 }
 
 select:disabled,
@@ -6942,7 +6901,7 @@ select:disabled,
 
   cursor: not-allowed;
   color: var(--text-muted);
-  background-color: var(--surface-subtle);
+  background-color: color-mix(in oklch, var(--surface-inset) 45%, var(--surface));
   opacity: 1;
 }
 
@@ -7090,61 +7049,42 @@ select option,
   line-height: 1.6;
 }
 
+/* 聚焦：与 input:focus 同一组信号——槽抬回纸面 + accent 描边 + 焦点环。 */
 .deploy-textarea:focus,
 select:focus,
 .select-input:focus {
   --select-arrow: var(--accent);
 
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
-}
-
-.deploy-meta-grid dd {
-  white-space: normal;
-}
-
-.deploy-meta-grid dt {
-  color: var(--text-mid);
-  font-size: 12px;
-}
-
-.deploy-meta-grid dd {
-  font-size: 13px;
-  line-height: 1.45;
-}
-
-.deploy-inline-list {
-  line-height: 1.6;
-}
-
-.deploy-command-preview pre {
-  max-height: 360px;
+  background-color: var(--control-lift);
+  box-shadow: var(--focus-glow);
 }
 
 /* ── 预览面板 · 通用定义列表范式：分组 + 标签值行，替代同质卡片网格（去卡片套卡片）。
    镜像打包 / 远程部署 / 前端上传三个预览面板共用。 ── */
-.package-preview-body {
+/* 右栏＝预览本体：标识 / 定义列表 / Dockerfile 三段，最后一段吃掉剩余高度并在内部滚动，
+   所以整栏不滚。构建中 RunProgress 会追加成隐式第四行，不出现时也不留空隙。 */
+.package-preview {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
   min-height: 0;
+  height: 100%;
 }
 
 /* 主标识：镜像引用作为“要构建什么”的锚点。 */
+/* 主标识＝预览栏的锚点。accent 转中性后，5% 的染底已经什么都读不出来，
+   改用控件层把它和纸面拉开一步；空态不另开一档底色，靠文案和字体切换表达。 */
 .preview-identity {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border: 1px solid color-mix(in oklch, var(--accent) 22%, transparent);
+  border: 0;
   border-radius: var(--radius-md);
-  background: color-mix(in oklch, var(--accent) 5%, var(--surface));
-}
-
-.preview-identity.empty {
-  border-color: var(--border);
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
 }
 
 .preview-identity-main {
@@ -7172,7 +7112,7 @@ select:focus,
 }
 
 .preview-identity.empty strong {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-family: var(--font-sans);
   font-size: 14px;
   font-weight: 600;
@@ -7189,13 +7129,14 @@ select:focus,
   min-width: 0;
 }
 
+/* 小标题独立承担分区，标题下的横线退役——与服务器页右栏 .status-section-title 同一档。 */
 .preview-group-title {
-  margin: 0 0 4px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+  margin: 0 0 6px;
   color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .preview-list {
@@ -7205,19 +7146,15 @@ select:focus,
   min-width: 0;
 }
 
-/* 行：标签灰字 + 值，行间发丝线分隔，零外框——密度高、易扫读。 */
+/* 行：标签灰字 + 值。行间既不用细线也不用斑马纹——行距加上灰标签 / 实值的字重差
+   已经足够扫读（同 .info-row）。 */
 .preview-row {
   display: grid;
   grid-template-columns: 68px minmax(0, 1fr);
   align-items: baseline;
   gap: 12px;
   min-width: 0;
-  padding: 7px 2px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
-}
-
-.preview-row:last-child {
-  border-bottom: 0;
+  padding: 8px 2px;
 }
 
 .preview-row dt {
@@ -7253,14 +7190,10 @@ select:focus,
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 7px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 }
 
 .preview-group-head .preview-group-title {
   margin: 0;
-  padding: 0;
-  border: 0;
 }
 
 .preview-dockerfile .command-panel {
@@ -7304,58 +7237,6 @@ select:focus,
   max-height: 220px;
 }
 
-/* 远程部署：预览内容纵向堆叠，整体可滚动。 */
-.deploy-preview-body {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  min-height: 0;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
-}
-
-.package-meta-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: 8px;
-  margin: 0;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
-}
-
-.package-meta-grid .wide {
-  grid-column: 1 / -1;
-}
-
-.package-meta-grid div {
-  min-width: 0;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--bg);
-}
-
-.package-meta-grid dt {
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.package-meta-grid dd {
-  overflow: hidden;
-  margin: 5px 0 0;
-  color: var(--text);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* 通用复制按钮（CopyButton.vue）：幽灵图标，hover/聚焦显现，复制后转绿。 */
 .copy-button {
   display: inline-flex;
@@ -7382,7 +7263,7 @@ select:focus,
 }
 
 .copy-button.copied {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .copy-button:focus-visible {
@@ -7401,12 +7282,13 @@ select:focus,
   min-width: 0;
 }
 
+/* 代码块＝只读的控件层：与输入控件同一档底色，读作「一块内容区」而不是浮起的卡片。 */
 .command-panel > pre {
   margin: 0;
   padding: 10px 42px 10px 12px;
-  border: 1px solid var(--border-subtle);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: var(--surface-subtle);
+  background: var(--surface-inset);
   overflow: auto;
   max-height: 300px;
 }
@@ -7455,15 +7337,17 @@ select:focus,
   gap: 14px;
   width: min(620px, calc(100vw - 56px));
   padding: 13px 14px;
-  border: 1px solid color-mix(in oklch, var(--success) 34%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklch, var(--success) 8%, var(--surface));
+  /* 真浮层：投影和收边都保留。染底从 8% 提到 20%——页底与卡片合并成同一张纸后，
+     薄染在纸上几乎读不出来，只剩投影在撑着。 */
+  border: 1px solid color-mix(in oklab, var(--success) 26%, transparent);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--success) 20%, var(--surface));
   box-shadow: 0 18px 50px var(--scrim-strong);
 }
 
 .package-toast.failed {
-  border-color: color-mix(in oklch, var(--danger) 34%, transparent);
-  background: color-mix(in oklch, var(--danger) 10%, var(--surface));
+  border-color: color-mix(in oklab, var(--danger) 26%, transparent);
+  background: color-mix(in oklab, var(--danger) 18%, var(--surface));
 }
 
 .package-toast-main {
@@ -7479,12 +7363,12 @@ select:focus,
   margin-top: 5px;
   border-radius: 999px;
   background: var(--success);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--success) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--success) 14%, transparent);
 }
 
 .package-toast.failed .package-toast-dot {
   background: var(--danger);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--danger) 14%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--danger) 14%, transparent);
 }
 
 .package-toast-copy {
@@ -7499,7 +7383,7 @@ select:focus,
 
 .package-toast-copy > strong {
   overflow: hidden;
-  color: var(--success);
+  color: var(--success-text);
   font-size: 13px;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -7507,7 +7391,7 @@ select:focus,
 }
 
 .package-toast.failed .package-toast-copy > strong {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 .package-toast-meta {
@@ -7524,7 +7408,7 @@ select:focus,
   max-width: 100%;
   min-height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   background: var(--surface);
 }
@@ -7556,20 +7440,23 @@ select:focus,
   gap: 8px;
 }
 
+/* 次要出口：染底浮层上不再叠第三种描边，静止全透明，hover 才浮出纸面色。 */
 .toast-close-button {
   height: 32px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 7px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: transparent;
   font-size: 12px;
   font-weight: 700;
 }
 
+/* hover 不能用纸面色叠加：那在两个主题里方向相反（浅色提亮 / 暗色压暗）。
+   改用 accent 染底，accent 本身镜像，于是「hover 更显眼」两边都成立。 */
 .toast-close-button:hover {
   color: var(--text);
-  border-color: var(--border-strong);
+  background: color-mix(in oklch, var(--accent) 14%, transparent);
 }
 
 .package-toast-enter-active,
@@ -7601,14 +7488,20 @@ select:focus,
   color: var(--text);
 }
 
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* 滚动容器与网格分开两层。网格此前兼任滚动盒，展开补间要钉住的「内容高度」
+   就钉在了滚动盒上，把它撑出弹性容器、顶掉页脚，动画结束再弹回来。
+   拆开之后，min-height 钉的是内容，滚动盒纹丝不动。
+
+   scrollbar-gutter 常驻：卡片是定宽方格，auto-fill 的列数直接由可用宽度决定，
+   而展开一张卡往往正好让内容溢出、滚动条现身——12px 一进一出就足以让列数在
+   7 和 6 之间跳变，整片网格重排。槽位常留，列数就与滚动条无关了。 */
+.history-scroll {
   flex: 1 1 auto;
-  padding: 2px 2px 4px;
-  overflow: auto;
   min-height: 0;
+  padding: 2px 2px 6px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 /* 正方形卡片流：固定方格宽高，一行放满自动换行；开卡就地放大占 2×2。 */
@@ -7620,35 +7513,65 @@ select:focus,
   grid-auto-flow: row;
   justify-content: start;
   gap: 14px;
-  flex: 1 1 auto;
-  padding: 2px 2px 6px;
-  overflow: auto;
-  min-height: 0;
   align-content: start;
 }
 
-/* 单张方卡：单层柔边框，靠方格间距分隔，不叠横线。 */
+/* 单张方卡：单层柔边框，靠方格间距分隔，不叠横线。
+   展开时占 2×2 网格位，所以不会盖住任何邻卡；邻卡的让位由 GSAP Flip 补间。
+
+   width/height 写成显式的 100%（而不是靠网格默认的 stretch 撑开），是因为补间途中
+   GSAP 会往这里写内联尺寸、结束时又清掉。清掉的那一瞬间如果尺寸是「不确定」的，
+   卡片就会塌成内容高度——页脚被顶到摘要下面、整卡只剩一半高。写死 100% 之后，
+   任何时刻的尺寸都是确定值；GSAP 写内联值时它自然被覆盖，而有确定尺寸的网格项
+   本身就锚在区域左上角，所以「原地长大」也一并保证了，不需要额外的 self 对齐。 */
 .history-card {
   position: relative;
   display: block;
+  width: 100%;
+  height: 100%;
   border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface);
   transition:
     border-color 180ms ease,
     background-color 180ms ease,
-    box-shadow 180ms ease,
+    box-shadow 320ms var(--ease-out),
     transform 180ms var(--ease-out);
 }
 
-/* Flip 接管布局补间时，交出 transform/shadow 的 CSS 过渡，避免两套动画抢同一属性。 */
+/* Flip 期间交出 transform 的 CSS 过渡（GSAP 独占），box-shadow 留给 CSS 自己收尾。 */
 .history-grid.is-flipping .history-card {
-  transition: border-color 180ms ease, background-color 180ms ease;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 320ms var(--ease-out);
 }
 
-/* 补间中的展开卡放到最上层，放大时压过邻卡而非被裁切。 */
-.history-grid.is-flipping .history-card.open {
+/* 补间中两张卡都会溢出自己那一格（一张在放大、一张还没缩回去），都得抬层，
+   否则会被右侧和下方的邻卡盖住一角。放大的那张压在收起的那张之上。 */
+.history-grid.is-flipping .history-card.is-collapsing {
   z-index: 2;
+}
+
+.history-grid.is-flipping .history-card.open {
+  z-index: 3;
+}
+
+/* 补间途中卡片会从指针底下滑过，每滑过一张就闪一下 hover 底色和位移。
+   补间期间只压掉非展开卡的 hover 观感，不碰展开卡自己的强调边和投影。 */
+.history-grid.is-flipping .history-card:not(.open):hover {
+  border-color: var(--border);
+  background: var(--surface);
+  box-shadow: none;
+  transform: none;
+}
+
+/* 补间期间冻结抽屉的几何。抽屉里是 <pre> 命令块和 dt/dd 定义列表：宽度逐帧变化就要
+   重新折行重排，高度逐帧变化还会让它自己的滚动条一闪一闪。钉在终点尺寸上（由
+   setExpanded() 在 nextTick 之后量出写成内联变量），整段补间里它一次都不重排，
+   改由卡片的 overflow: hidden 随卡片长大逐帧把它揭开。 */
+.history-grid.is-flipping .history-card.open > .history-drawer {
+  flex: 0 0 auto;
+  width: var(--flip-drawer-w, auto);
+  height: var(--flip-drawer-h, auto);
+  overflow: hidden;
 }
 
 .history-card:hover {
@@ -7776,12 +7699,12 @@ select:focus,
 
 .status-dot.success {
   background: var(--success);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--success) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 16%, transparent);
 }
 
 .status-dot.failed {
   background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--danger) 16%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 16%, transparent);
 }
 
 /* 删除：默认隐形，悬停/开卡时浮现于右上角，保留一键删除且留在 tab 顺序内。 */
@@ -7810,8 +7733,8 @@ select:focus,
 }
 
 .history-delete:hover {
-  color: var(--danger);
-  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
 }
 
 .history-delete:disabled {
@@ -7824,8 +7747,8 @@ select:focus,
   gap: 5px;
   width: auto;
   padding: 0 10px;
-  color: var(--danger);
-  background: color-mix(in oklch, var(--danger) 14%, transparent);
+  color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 14%, transparent);
   font-size: 11px;
   font-weight: 700;
   opacity: 1;
@@ -7838,6 +7761,21 @@ select:focus,
   overflow: auto;
   padding: 4px 18px 18px;
   cursor: default;
+}
+
+/* 抽屉淡入，把「内容凭空出现」压成「跟着卡片一起展开」。 */
+.history-card.open > .history-drawer {
+  animation: history-drawer-in 300ms var(--ease-out) both;
+}
+
+@keyframes history-drawer-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .history-error {
@@ -7855,8 +7793,8 @@ select:focus,
   flex: 0 0 auto;
   padding: 2px 8px;
   border-radius: 6px;
-  color: var(--danger);
-  background: color-mix(in oklch, var(--danger) 12%, transparent);
+  color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 12%, transparent);
   font-size: 11px;
   font-weight: 700;
 }
@@ -7946,6 +7884,10 @@ select:focus,
     transition: none;
   }
 
+  .history-card.open > .history-drawer {
+    animation: none;
+  }
+
   .history-card:hover {
     transform: none;
   }
@@ -7955,7 +7897,7 @@ select:focus,
   display: grid;
   gap: 8px;
   place-items: start;
-  height: calc(100% - 46px);
+  height: 100%;
   color: var(--text-muted);
   text-align: left;
 }
@@ -7965,47 +7907,38 @@ select:focus,
   font-size: 15px;
 }
 
+/* 合并后状态栏不再有自己的头部（连接态胶囊已上移到操作条），故撑满整列高度。 */
 .status-result {
   display: flex;
   flex-direction: column;
   gap: 18px;
   align-content: start;
-  height: calc(100% - 46px);
-  padding-top: 10px;
-  overflow: auto;
+  height: 100%;
+  padding-right: 8px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
+/* 染底浓度比之前提高几个点：oklab 混色不再靠拖色相虚增彩度，需要更高比例才有同等存在感。 */
 .status-banner {
   display: flex;
   align-items: center;
   gap: 14px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: color-mix(in oklch, var(--success) 18%, var(--surface));
+  background: color-mix(in oklab, var(--success) 22%, var(--surface));
 }
 
 .status-banner.failed {
-  background: color-mix(in oklch, var(--danger) 14%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 20%, var(--surface));
 }
 
 .status-banner.warning {
-  background: color-mix(in oklch, var(--warning) 16%, var(--surface));
+  background: color-mix(in oklab, var(--warning) 22%, var(--surface));
 }
 
 .status-banner-icon {
   flex: none;
-}
-
-.status-banner.success .status-banner-icon {
-  color: var(--success);
-}
-
-.status-banner.failed .status-banner-icon {
-  color: var(--danger);
-}
-
-.status-banner.warning .status-banner-icon {
-  color: var(--warning-text);
 }
 
 .status-banner-text {
@@ -8016,9 +7949,26 @@ select:focus,
 }
 
 .status-banner-text strong {
-  color: var(--text);
   font-size: 15px;
   font-weight: 700;
+}
+
+/* 图标与标题同色：横幅的状态语义由「有色图标 + 有色标题」共同承担。
+   此前只染图标、标题留深色字，第一眼读不出是成功还是失败。
+   副标题（user@host · 耗时）保持中性——那是数据，不是状态。 */
+.status-banner.success .status-banner-icon,
+.status-banner.success .status-banner-text strong {
+  color: var(--success-text);
+}
+
+.status-banner.failed .status-banner-icon,
+.status-banner.failed .status-banner-text strong {
+  color: var(--danger-text);
+}
+
+.status-banner.warning .status-banner-icon,
+.status-banner.warning .status-banner-text strong {
+  color: var(--warning-text);
 }
 
 .status-banner-text span {
@@ -8049,25 +7999,26 @@ select:focus,
   gap: 12px;
 }
 
+/* 卡片上的工具按钮：rest 用 inset 成形（取代描边），hover 走 accent 染底。
+   accent 本身在两个主题里镜像，所以「hover 更显眼」这件事自动两边都成立。 */
 .metrics-refresh {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-inset);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+  transition: color 140ms ease, background-color 140ms ease;
 }
 
 .metrics-refresh:hover:not(:disabled) {
-  border-color: var(--text-soft);
-  color: var(--text);
-  background: var(--surface-subtle);
+  color: var(--accent-strong);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-inset));
 }
 
 .metrics-refresh:disabled {
@@ -8084,6 +8035,8 @@ select:focus,
   }
 }
 
+/* 指标区不再包下沉块：直接坐在卡片上，与上方「服务器信息」同一个面，
+   分区靠 .status-section-title 的小标题承担，卡片内保持单层。 */
 .metric-tiles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -8115,10 +8068,11 @@ select:focus,
   font-variant-numeric: tabular-nums;
 }
 
+/* 槽底与输入框凹槽同深度（inset）：卡片内只允许「卡片面」和「控件凹陷」两个色调。 */
 .metric-bar {
   height: 6px;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: var(--surface-inset);
   overflow: hidden;
 }
 
@@ -8143,6 +8097,16 @@ select:focus,
   background: var(--danger);
 }
 
+/* 百分比数字只在越线时染色（warn ≥70 / danger ≥90）：ok 保持中性，
+   否则正常值也会铺一层绿，反而稀释了真正需要注意的那一个。 */
+.metric-tile.warn .metric-tile-head strong {
+  color: var(--warning-text);
+}
+
+.metric-tile.danger .metric-tile-head strong {
+  color: var(--danger-text);
+}
+
 .metric-tile small {
   overflow: hidden;
   color: var(--text-soft);
@@ -8160,7 +8124,7 @@ select:focus,
 
 /* 首次读取：指标条显示来回滑动的 shimmer，传达“读取中”而非“无法获取”。 */
 .metric-tile.loading .metric-bar {
-  background: var(--surface-muted);
+  background: var(--surface-inset);
 }
 
 .metric-tile.loading .metric-bar span {
@@ -8204,22 +8168,21 @@ select:focus,
   align-items: center;
   gap: 7px;
   padding: 9px 14px;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: 999px;
   color: var(--text);
-  background: var(--surface-muted);
+  background: var(--surface-inset);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition:
-    border-color 140ms ease,
     background-color 140ms ease,
     color 140ms ease;
 }
 
 .status-action:hover {
-  border-color: var(--text-soft);
-  background: var(--surface-subtle);
+  color: var(--accent-strong);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-inset));
 }
 
 .status-action svg {
@@ -8228,17 +8191,17 @@ select:focus,
 
 .result-message {
   margin: 0;
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 14px;
   font-weight: 700;
 }
 
 .result-message.ok {
-  color: var(--success);
+  color: var(--success-text);
 }
 
 .result-message.warning {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 
 .info-grid {
@@ -8247,7 +8210,8 @@ select:focus,
   margin: 0;
 }
 
-/* 服务器信息按定义列表渲染：标签灰字 + 值，行间细线分隔，零边框。 */
+/* 服务器信息按定义列表渲染。既不用行间细线也不用斑马纹：卡片内不再叠装饰性色块，
+   行距 + 灰标签/实值的字重差已足够扫读。 */
 .info-row {
   display: grid;
   grid-template-columns: 56px minmax(0, 1fr);
@@ -8255,11 +8219,6 @@ select:focus,
   gap: 14px;
   min-width: 0;
   padding: 8px 2px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
-}
-
-.info-row:last-child {
-  border-bottom: 0;
 }
 
 .info-row dt {
@@ -8428,12 +8387,10 @@ select:focus,
     grid-template-columns: 1fr;
   }
 
-  .package-view {
-    grid-template-columns: 1fr;
-  }
-
-  .deploy-view {
-    grid-template-columns: 1fr;
+  .package-body,
+  .deploy-body,
+  .frontend-body {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .container-logs-view {
@@ -8581,16 +8538,15 @@ select:focus,
   overflow: hidden;
 }
 
-.remote-file-shell.panel {
+/* 整页就是那张纸：不再套 .panel——那层外框、圆角和投影本来就在下面被逐条抵消掉了，
+   留着只会让人以为这里还有一张卡片。 */
+.remote-file-shell {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
   background: var(--surface);
-  box-shadow: none;
 }
 
 .remote-file-toolbar {
@@ -8599,8 +8555,7 @@ select:focus,
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 8px 12px 6px;
   background: var(--surface-subtle);
 }
 
@@ -8635,9 +8590,13 @@ select:focus,
 .remote-file-history-actions button:hover:not(:disabled),
 .remote-file-inspector-head > button:hover:not(:disabled),
 .remote-file-statusbar > p > button:hover:not(:disabled) {
-  border-color: var(--border);
   color: var(--text);
-  background: var(--surface);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-subtle));
+}
+
+/* 状态栏坐在 --chrome 上，染底得压在 --chrome 而不是 chrome 带上。 */
+.remote-file-statusbar > p > button:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent) 12%, var(--chrome));
 }
 
 .remote-file-history-actions button:focus-visible,
@@ -8651,6 +8610,7 @@ select:focus,
 .remote-file-context-menu button:focus-visible,
 .remote-file-inline-editor button:focus-visible {
   outline: none;
+  border-color: var(--accent);
   box-shadow: var(--focus-glow);
 }
 
@@ -8659,6 +8619,9 @@ select:focus,
   background: transparent;
 }
 
+/* chrome 带上的控件用 --surface-muted（浅色 94.5 再暗一步、暗色 30 提亮一步），
+   与全局次要按钮同一档；纸面上的控件才用 --surface-inset。两处都是「离所在底面一步，
+   方向朝还有空间的那一侧」，只是底面不同。描边退役，聚焦时才借 border-color 画 accent 边。 */
 .remote-path-bar {
   position: relative;
   display: flex;
@@ -8666,13 +8629,14 @@ select:focus,
   min-width: 0;
   min-height: 32px;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .remote-path-bar.editing {
   border-color: var(--accent);
+  background: var(--control-lift);
   box-shadow: var(--focus-glow);
 }
 
@@ -8720,7 +8684,7 @@ select:focus,
 
 .remote-path-crumb svg {
   flex: 0 0 auto;
-  color: var(--text-faint);
+  color: var(--text-soft);
 }
 
 .remote-path-edit-trigger {
@@ -8743,14 +8707,15 @@ select:focus,
   min-width: 0;
   height: 32px;
   padding: 0 9px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  color: var(--text-soft);
-  background: var(--surface);
+  color: var(--text-muted);
+  background: var(--surface-muted);
 }
 
 .remote-file-filter:focus-within {
   border-color: var(--accent);
+  background: var(--control-lift);
   box-shadow: var(--focus-glow);
 }
 
@@ -8767,7 +8732,7 @@ select:focus,
 }
 
 .remote-file-filter input::placeholder {
-  color: var(--text-soft);
+  color: var(--text-muted);
 }
 
 .remote-file-tool-button,
@@ -8780,10 +8745,10 @@ select:focus,
   gap: 6px;
   min-height: 30px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-mid);
-  background: var(--surface);
+  background: var(--surface-muted);
   font-size: 12px;
   font-weight: 650;
   white-space: nowrap;
@@ -8798,9 +8763,8 @@ select:focus,
 .remote-file-selection-actions button:hover:not(:disabled),
 .remote-file-inline-editor button:hover:not(:disabled),
 .remote-file-conflict-actions button:hover:not(:disabled) {
-  border-color: var(--border-strong);
   color: var(--text);
-  background: var(--surface-raised);
+  background: var(--control-lift);
 }
 
 .remote-file-tool-button:active:not(:disabled),
@@ -8835,9 +8799,8 @@ select:focus,
   justify-content: space-between;
   gap: 14px;
   min-width: 0;
-  min-height: 40px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  min-height: 34px;
+  padding: 0 12px 8px;
   background: var(--surface-subtle);
 }
 
@@ -8860,7 +8823,7 @@ select:focus,
 
 .remote-file-server-context small {
   flex: 0 0 auto;
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -8888,25 +8851,27 @@ select:focus,
   font-size: 11px;
 }
 
-.remote-file-selection-actions button.danger,
-.remote-file-context-menu button.danger {
-  border-color: color-mix(in oklch, var(--danger) 38%, var(--border));
+/* 状态混色一律走 oklab——oklch 会插值色相角，把接近中性的混色拖到别的色系去。
+   染底压在按钮自己那档填充上，而不是压回带面：压回带面等于把「这是个按钮」抹掉。 */
+.remote-file-selection-actions button.danger {
   color: var(--danger-text);
-  background: color-mix(in oklch, var(--danger) 8%, var(--surface));
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface-muted));
 }
 
-.remote-file-selection-actions button.danger:hover:not(:disabled),
-.remote-file-context-menu button.danger:hover {
-  border-color: var(--danger-border);
-  background: color-mix(in oklch, var(--danger) 16%, var(--surface));
+.remote-file-selection-actions button.danger:hover:not(:disabled) {
+  background: color-mix(in oklab, var(--danger) 22%, var(--surface-muted));
+}
+
+/* 右键菜单里的项本身是平的（透明底），危险项只靠红字区分，hover 才染底。 */
+.remote-file-context-menu button.danger {
+  color: var(--danger-text);
 }
 
 .remote-file-inline-confirm {
   margin: 0;
   padding: 10px 14px 11px;
-  border-top: 0;
-  border-bottom: 1px solid color-mix(in oklch, var(--danger) 26%, var(--border-subtle));
-  background: color-mix(in oklch, var(--danger) 5%, var(--surface));
+  border: 0;
+  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
 }
 
 .remote-file-conflict {
@@ -8916,8 +8881,8 @@ select:focus,
   gap: 14px;
   min-width: 0;
   padding: 9px 14px;
-  border-bottom: 1px solid color-mix(in oklch, var(--warning) 34%, var(--border-subtle));
-  background: color-mix(in oklch, var(--warning) 8%, var(--surface));
+  border: 0;
+  background: color-mix(in oklab, var(--warning) 12%, var(--surface));
 }
 
 .remote-file-conflict-copy {
@@ -9009,11 +8974,13 @@ select:focus,
   font-size: 12px;
 }
 
+/* 这是全站唯一保留 1px 分隔的地方：六列定高数据表里，行线是阅读轨而不是外框。
+   换到最轻的一档 --border-hairline，只留下「顺着这一行读」所需的那点提示。 */
 .remote-file-table th,
 .remote-file-table td {
   height: 35px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-hairline);
   text-align: left;
   vertical-align: middle;
 }
@@ -9024,7 +8991,6 @@ select:focus,
   z-index: 2;
   height: 32px;
   padding-top: 1px;
-  border-bottom-color: var(--border);
   color: var(--text-muted);
   background: var(--surface-subtle);
   font-size: 11px;
@@ -9097,7 +9063,7 @@ select:focus,
 }
 
 .remote-file-table tbody tr:hover {
-  background: var(--surface-subtle);
+  background: color-mix(in oklch, var(--accent) 7%, var(--surface));
 }
 
 .remote-file-table tbody tr:focus-visible {
@@ -9110,6 +9076,13 @@ select:focus,
 
 .remote-file-table tbody tr.selected:hover {
   background: color-mix(in oklch, var(--accent) 17%, var(--surface));
+}
+
+.remote-file-table tbody tr.selected .size-column,
+.remote-file-table tbody tr.selected .modified-column,
+.remote-file-table tbody tr.selected .permissions-column,
+.remote-file-table tbody tr.selected .owner-column {
+  color: var(--text-mid);
 }
 
 .remote-file-table tbody tr.renaming {
@@ -9148,7 +9121,7 @@ select:focus,
   height: 18px;
   border-radius: var(--radius-sm);
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 16%, transparent);
 }
 
 .remote-file-table td.mono,
@@ -9176,7 +9149,7 @@ select:focus,
   border-radius: var(--radius-sm);
   outline: 0;
   color: var(--text);
-  background: var(--surface-raised);
+  background: var(--control-lift);
   box-shadow: var(--focus-glow);
   font-size: 12px;
 }
@@ -9320,8 +9293,7 @@ select:focus,
   border: 1px dashed var(--accent);
   border-radius: var(--radius-sm);
   color: var(--accent-strong);
-  background: color-mix(in oklch, var(--accent) 10%, var(--surface) 90%);
-  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--accent) 10%, transparent);
+  background: color-mix(in oklch, var(--accent) 18%, var(--surface));
   pointer-events: none;
 }
 
@@ -9335,7 +9307,7 @@ select:focus,
 }
 
 .remote-file-drop-overlay span {
-  color: var(--text-muted);
+  color: var(--text-mid);
   font-size: 12px;
 }
 
@@ -9343,7 +9315,6 @@ select:focus,
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  border-left: 1px solid var(--border);
   background: var(--surface-subtle);
   scrollbar-gutter: stable;
 }
@@ -9353,10 +9324,8 @@ select:focus,
   padding: 14px;
 }
 
-.remote-transfer-section {
-  border-bottom: 1px solid var(--border);
-}
-
+/* 传输队列与属性两段之间原来是一条 1px。两段各自 14px 内边距凑出 28px 留白，
+   与表单分组的 22px 同一个节奏，线是多余的——.remote-transfer-section 自此无需单独规则。 */
 .remote-file-inspector-head {
   display: flex;
   align-items: flex-start;
@@ -9379,7 +9348,7 @@ select:focus,
 }
 
 .remote-file-inspector-head small {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 11px;
 }
 
@@ -9457,7 +9426,7 @@ select:focus,
 }
 
 .remote-transfer-list small {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 10px;
 }
 
@@ -9476,7 +9445,6 @@ select:focus,
   min-width: 0;
   margin-top: 18px;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .remote-file-detail-identity > svg {
@@ -9519,12 +9487,12 @@ select:focus,
   margin: 11px 0 0;
 }
 
+/* 与预览面板的 .preview-row 同一处方：只靠内边距和 dt/dd 的字色差分行，不画线。 */
 .remote-file-detail-list > div {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 8px;
   padding: 7px 0;
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .remote-file-detail-list dt,
@@ -9536,7 +9504,7 @@ select:focus,
 }
 
 .remote-file-detail-list dt {
-  color: var(--text-soft);
+  color: var(--text-muted);
 }
 
 .remote-file-detail-list dd {
@@ -9557,7 +9525,6 @@ select:focus,
   gap: 7px;
   margin-top: 16px;
   padding-top: 14px;
-  border-top: 1px solid var(--border);
 }
 
 .remote-file-annotation-head {
@@ -9574,7 +9541,7 @@ select:focus,
 }
 
 .remote-file-annotation-head span {
-  color: var(--text-soft);
+  color: var(--text-muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
@@ -9585,11 +9552,11 @@ select:focus,
   max-height: 220px;
   padding: 8px 9px;
   resize: vertical;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   outline: none;
   color: var(--text);
-  background: var(--surface-raised);
+  background: var(--surface-muted);
   font-size: 11px;
   line-height: 1.55;
   transition:
@@ -9598,20 +9565,19 @@ select:focus,
 }
 
 .remote-file-annotation-editor textarea::placeholder {
-  color: var(--text-soft);
+  color: var(--text-muted);
 }
 
-.remote-file-annotation-editor textarea:hover {
-  border-color: var(--border-strong);
-}
-
+/* 描边退役后 hover 无描边可换，改由聚焦独自承担：accent 边 + 光环 + 再亮一步的填充。 */
 .remote-file-annotation-editor textarea:focus {
   border-color: var(--accent);
+  background: var(--control-lift);
   box-shadow: var(--focus-glow);
 }
 
 .remote-file-annotation-editor textarea[aria-invalid='true'] {
   border-color: var(--danger-border);
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface-muted));
 }
 
 .remote-file-annotation-hint,
@@ -9622,7 +9588,7 @@ select:focus,
 }
 
 .remote-file-annotation-hint {
-  color: var(--text-soft);
+  color: var(--text-muted);
 }
 
 .remote-file-annotation-error {
@@ -9643,10 +9609,10 @@ select:focus,
   gap: 5px;
   height: 29px;
   padding: 0 9px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
-  background: var(--surface);
+  background: var(--surface-muted);
   font-size: 11px;
   font-weight: 700;
   transition:
@@ -9658,9 +9624,8 @@ select:focus,
 }
 
 .remote-file-annotation-actions button:hover:not(:disabled) {
-  border-color: var(--border-strong);
   color: var(--text);
-  background: var(--surface-raised);
+  background: var(--control-lift);
 }
 
 .remote-file-annotation-actions button:focus-visible {
@@ -9673,13 +9638,12 @@ select:focus,
 }
 
 .remote-file-annotation-actions .primary-button {
-  border-color: var(--accent);
+  border-color: transparent;
   color: var(--text-on-fill);
   background: var(--accent);
 }
 
 .remote-file-annotation-actions .primary-button:hover:not(:disabled) {
-  border-color: var(--accent-strong);
   color: var(--text-on-fill);
   background: var(--accent-strong);
 }
@@ -9713,8 +9677,7 @@ select:focus,
   min-width: 0;
   min-height: 28px;
   padding: 0 12px;
-  border-top: 1px solid var(--border);
-  color: var(--text-soft);
+  color: var(--text-mid);
   background: var(--chrome);
   font-size: 11px;
 }
@@ -9731,7 +9694,7 @@ select:focus,
   min-width: 0;
   margin: 0 0 0 auto;
   overflow: hidden;
-  color: var(--text-muted);
+  color: var(--text-mid);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -9779,11 +9742,12 @@ select:focus,
 
 .remote-file-context-menu button:hover {
   color: var(--text);
-  background: var(--surface-subtle);
+  background: color-mix(in oklch, var(--accent) 12%, var(--surface-raised));
 }
 
 .remote-file-context-menu button.danger:hover {
   color: var(--danger-text);
+  background: color-mix(in oklab, var(--danger) 14%, var(--surface-raised));
 }
 
 .remote-file-context-menu > span {
@@ -9907,18 +9871,6 @@ select:focus,
   .workspace-content {
     overflow-x: hidden;
     overflow-y: auto;
-  }
-
-  .deploy-view {
-    grid-template-columns: minmax(0, 1fr);
-    height: auto;
-    gap: 12px;
-    padding-bottom: 14px;
-  }
-
-  .deploy-panel {
-    height: auto;
-    min-height: 680px;
   }
 
   .compact-row,

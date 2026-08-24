@@ -12,6 +12,8 @@ import {
 } from '@lucide/vue'
 
 // 展示最近一次 SSH 连接结果和远程环境探测信息。
+// 合并进控制台卡片后本组件不再有自己的头部与外框：标题与连接态胶囊由 ServersView 的
+// 操作条统一承载，这里只渲染右栏内容（结果横幅 / 服务器信息 / 资源 / 下一步）。
 const props = defineProps({
   // testConnection 返回的结果对象，包含 ok/status/message/remote/durationMs。
   result: {
@@ -155,20 +157,6 @@ function goTo(routeName) {
 
 <template>
   <section class="status-panel">
-    <div class="panel-header">
-      <h3>连接状态</h3>
-      <span
-        class="state-pill"
-        :class="{
-          success: result?.ok && !stale,
-          failed: result && !result.ok,
-          warning: stale,
-        }"
-      >
-        {{ busy ? 'Testing' : stale ? 'Retest Required' : result?.status || 'Idle' }}
-      </span>
-    </div>
-
     <div v-if="busy" class="status-empty">
       <strong>正在建立 SSH 连接</strong>
       <span>等待握手、认证和远程环境探测。</span>

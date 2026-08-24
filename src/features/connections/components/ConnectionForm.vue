@@ -1,33 +1,15 @@
 <script setup>
-import { computed } from 'vue'
-
-// 收集 SSH 配置参数，并把用户操作意图抛给所属页面处理。
+// 收集 SSH 配置参数。新建 / 保存 / 测试三个动作已上移到 ServersView 的控制台操作条，
+// 这里只保留字段本身，以及「字段内回车即测试连接」（form submit → test）。
 const props = defineProps({
   // 服务器表单对象，对应 useWorkspaceSession.js 里的 form。
   modelValue: {
     type: Object,
     required: true,
   },
-  // 连接测试或命令执行中，用于禁用表单按钮。
-  busy: {
-    type: Boolean,
-    default: false,
-  },
-  // 保存服务器配置中，用于显示保存按钮状态。
-  saving: {
-    type: Boolean,
-    default: false,
-  },
-  // 当前表单所处模式：create 表示新建服务器，edit 表示编辑已保存服务器。
-  mode: {
-    type: String,
-    default: 'create',
-  },
 })
 
-const emit = defineEmits(['update:modelValue', 'test', 'selectKey', 'save', 'create'])
-
-const isCreating = computed(() => props.mode === 'create')
+const emit = defineEmits(['update:modelValue', 'test', 'selectKey'])
 
 /**
  * 更新表单中的单个字段，并通过 v-model 把完整表单回传给父组件。
@@ -42,31 +24,6 @@ function updateField(field, value) {
 
 <template>
   <form class="connection-form" @submit.prevent="emit('test')">
-    <div class="panel-header">
-      <h3>{{ isCreating ? '新建服务器' : '服务器信息' }}</h3>
-      <div class="panel-actions">
-        <button
-          class="secondary-button"
-          type="button"
-          :disabled="busy || saving"
-          @click="emit('create')"
-        >
-          新建
-        </button>
-        <button
-          class="secondary-button"
-          type="button"
-          :disabled="busy || saving"
-          @click="emit('save')"
-        >
-          {{ saving ? '保存中...' : isCreating ? '保存新服务器' : '保存修改' }}
-        </button>
-        <button class="primary-button" type="submit" :disabled="busy || saving">
-          {{ busy ? '测试中...' : '测试连接' }}
-        </button>
-      </div>
-    </div>
-
     <div class="form-group">
       <p class="form-group-title">连接目标</p>
 

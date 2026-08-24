@@ -98,6 +98,18 @@ const mountLines = computed(() => {
   );
 });
 
+// 部署态胶囊：两张面板合并后，原本 panel-header 上的胶囊由页尾操作条统一持有。
+const deployTone = computed(() => {
+  if (isDeploying.value) return "running";
+  if (!deployResult.value) return "";
+  return deployResult.value.ok ? "success" : "failed";
+});
+
+const deployLabel = computed(() => {
+  if (isDeploying.value) return "Deploying";
+  return deployResult.value?.status || "Idle";
+});
+
 const deployFormCard = ref(null);
 const isAdvancedOpen = ref(false);
 const isPackageHistoryOpen = ref(false);
@@ -511,7 +523,7 @@ onMounted(() => {
       ease: "power3.out",
     });
 
-    gsap.from(".deploy-section", {
+    gsap.from(".form-group", {
       autoAlpha: 0,
       y: 8,
       duration: 0.24,
@@ -590,33 +602,11 @@ watch(
 
 <template>
   <div class="deploy-view">
-    <section ref="deployFormCard" class="panel deploy-panel deploy-form-panel">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Remote Deploy</p>
-          <h3>镜像包部署</h3>
-        </div>
-        <span
-          class="state-pill"
-          :class="{
-            success: deployResult?.ok && !isDeploying,
-            failed: deployResult && !deployResult.ok && !isDeploying,
-            running: isDeploying,
-          }"
-        >
-          {{ isDeploying ? "Deploying" : deployResult?.status || "Idle" }}
-        </span>
-      </div>
-
-      <div class="deploy-form-body">
-        <div class="deploy-fields">
-          <section class="deploy-section service-template-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">服务模板</span>
-                <strong>部署默认值</strong>
-              </div>
-            </div>
+    <section class="deploy-console">
+      <div class="deploy-body">
+        <div ref="deployFormCard" class="deploy-fields-col">
+          <div class="form-group">
+            <p class="form-group-title">服务模板</p>
 
             <div class="template-picker-row service-template-row">
               <AppSelect
@@ -680,7 +670,11 @@ watch(
             <InlineDeleteConfirm
               v-if="pendingServiceTemplateDelete"
               title="删除服务模板？"
-              :message="`服务模板「${pendingServiceTemplateDelete.name}」将被永久删除，已有部署记录不会受影响。`"
+              :message="
+                '服务模板「' +
+                pendingServiceTemplateDelete.name +
+                '」将被永久删除，已有部署记录不会受影响。'
+              "
               :busy="isDeletingServiceTemplate"
               @cancel="closeServiceTemplateDelete"
               @confirm="confirmServiceTemplateDelete"
@@ -748,14 +742,11 @@ watch(
               <AlertCircle v-else :size="14" aria-hidden="true" />
               <span>{{ serviceTemplateSaveNotice.message }}</span>
             </div>
-          </section>
+          </div>
 
-          <section class="deploy-section deploy-package-field-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">镜像包</span>
-                <strong>部署文件</strong>
-              </div>
+          <div class="form-group">
+            <div class="form-group-head">
+              <p class="form-group-title">镜像包</p>
               <span class="deploy-source-pill">{{ currentPackageSource }}</span>
             </div>
 
@@ -770,7 +761,7 @@ watch(
               :disabled="!hasDeploymentBridge || isDeploying"
               :aria-label="
                 hasDeployPackage
-                  ? `更换镜像包：${currentPackageFileName}`
+                  ? '更换镜像包：' + currentPackageFileName
                   : '选择或拖入镜像包'
               "
               @click="chooseDeployPackageFile"
@@ -819,21 +810,16 @@ watch(
                   : "请通过 Electron 模式选择本地文件"
               }}
             </small>
-          </section>
+          </div>
 
-          <section
+          <div
             v-if="recentPackages.length && displayedHistoryPackage"
-            class="deploy-section deploy-history-picks"
+            class="form-group deploy-history-picks"
             :class="{ expanded: isPackageHistoryOpen }"
           >
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">最近镜像包</span>
-                <strong>选择已有打包结果</strong>
-              </div>
-              <span class="deploy-count-pill"
-                >{{ packageHistory.length }} 条</span
-              >
+            <div class="form-group-head">
+              <p class="form-group-title">最近镜像包</p>
+              <span class="deploy-count-pill">{{ packageHistory.length }} 条</span>
             </div>
 
             <button
@@ -896,15 +882,10 @@ watch(
                 </button>
               </div>
             </transition>
-          </section>
+          </div>
 
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">容器运行</span>
-                <strong>名称、端口与网络</strong>
-              </div>
-            </div>
+          <div class="form-group">
+            <p class="form-group-title">容器运行</p>
 
             <div class="field-row compact-row">
               <label class="field fill">
@@ -998,27 +979,22 @@ watch(
             </div>
 
             <label v-if="deployForm.nginxProxyCheckEnabled" class="field fill">
-                <AppTooltip
-                  class="field-help-label"
-                  content="要检查的 Nginx Docker 容器名称，对应 docker ps 输出中的 NAMES，不是镜像名。"
-                >Nginx 容器名</AppTooltip>
-                <input
-                  :value="deployForm.nginxContainerName"
-                  type="text"
-                  @input="
-                    updateDeployForm({ nginxContainerName: $event.target.value })
-                  "
-                />
+              <AppTooltip
+                class="field-help-label"
+                content="要检查的 Nginx Docker 容器名称，对应 docker ps 输出中的 NAMES，不是镜像名。"
+              >Nginx 容器名</AppTooltip>
+              <input
+                :value="deployForm.nginxContainerName"
+                type="text"
+                @input="
+                  updateDeployForm({ nginxContainerName: $event.target.value })
+                "
+              />
             </label>
-          </section>
+          </div>
 
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">基础信息</span>
-                <strong>服务与镜像</strong>
-              </div>
-            </div>
+          <div class="form-group">
+            <p class="form-group-title">基础信息</p>
 
             <div class="field-row compact-row">
               <label class="field fill">
@@ -1064,15 +1040,10 @@ watch(
                 />
               </label>
             </div>
-          </section>
+          </div>
 
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">服务器目录</span>
-                <strong>上传与发布位置</strong>
-              </div>
-            </div>
+          <div class="form-group">
+            <p class="form-group-title">服务器目录</p>
 
             <div class="field-row compact-row">
               <label class="field fill">
@@ -1096,21 +1067,19 @@ watch(
                 />
               </label>
             </div>
-          </section>
+          </div>
 
-          <section
-            class="deploy-section deploy-advanced-section"
+          <div
+            class="form-group deploy-advanced-section"
             :class="{ expanded: isAdvancedOpen }"
           >
             <button
               type="button"
-              class="deploy-section-header advanced-toggle"
+              class="form-group-head advanced-toggle"
+              :aria-expanded="isAdvancedOpen"
               @click="toggleAdvancedOpen"
             >
-              <span>
-                <span class="field-prompt">高级选项</span>
-                <strong>冲突策略、权限与环境变量</strong>
-              </span>
+              <span class="form-group-title">高级选项</span>
               <b>{{ isAdvancedOpen ? "收起" : "展开" }}</b>
             </button>
 
@@ -1175,208 +1144,206 @@ watch(
                 </label>
               </div>
             </transition>
-          </section>
+          </div>
         </div>
 
-        <div class="package-actions deploy-actions">
-          <div class="panel-actions">
-            <button
-              class="primary-button"
-              type="button"
-              :class="{ 'is-loading': isDeploying }"
-              :aria-busy="isDeploying"
-              :disabled="!canDeploy || isDeploying"
-              @click="runDeployment"
+        <div class="deploy-preview-col">
+          <div class="preview-identity" :class="{ empty: !deployPreview?.imageRef }">
+            <div class="preview-identity-main">
+              <span class="preview-identity-label">镜像引用</span>
+              <strong :title="deployPreview?.imageRef">{{ deployPreview?.imageRef || "等待填写部署参数" }}</strong>
+            </div>
+            <CopyButton
+              v-if="deployPreview?.imageRef"
+              :value="deployPreview.imageRef"
+              label="复制镜像引用"
+            />
+          </div>
+
+          <div class="preview-groups">
+            <section class="preview-group">
+              <p class="preview-group-title">容器</p>
+              <dl class="preview-list">
+                <div class="preview-row">
+                  <dt>容器名</dt>
+                  <dd :title="deployPreview?.containerName">{{ deployPreview?.containerName || "-" }}</dd>
+                </div>
+                <div class="preview-row">
+                  <dt>端口映射</dt>
+                  <dd>{{ deployPreview?.hostPort || "-" }} → {{ deployPreview?.containerPort || "-" }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="preview-group">
+              <p class="preview-group-title">远程路径</p>
+              <dl class="preview-list">
+                <div class="preview-row">
+                  <dt>远程包</dt>
+                  <dd class="mono" :title="deployPreview?.remotePackagePath">{{ deployPreview?.remotePackagePath || "-" }}</dd>
+                </div>
+                <div class="preview-row">
+                  <dt>发布目录</dt>
+                  <dd class="mono" :title="deployPreview?.remoteReleaseDir">{{ deployPreview?.remoteReleaseDir || "-" }}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+
+          <div class="deploy-preview-scroll">
+            <section class="preview-group">
+              <p class="preview-group-title">运行配置</p>
+              <dl class="preview-list">
+                <div class="preview-row wide">
+                  <dt>环境变量</dt>
+                  <dd>{{ environmentLines.join(" | ") || "暂无" }}</dd>
+                </div>
+                <div class="preview-row wide">
+                  <dt>挂载目录</dt>
+                  <dd>{{ mountLines.join(" | ") || "暂无" }}</dd>
+                </div>
+                <div class="preview-row wide">
+                  <dt>
+                    <AppTooltip class="field-help-label" content="后端容器将加入的 Docker 网络。">
+                      Docker 网络
+                    </AppTooltip>
+                  </dt>
+                  <dd class="mono">{{ deployPreview?.networkName || "-" }}</dd>
+                </div>
+                <div v-if="deployForm.nginxProxyCheckEnabled" class="preview-row wide">
+                  <dt>
+                    <AppTooltip
+                      class="field-help-label"
+                      content="Nginx 在 Docker 网络内访问后端时应使用的容器名和容器端口。"
+                    >Nginx 代理目标</AppTooltip>
+                  </dt>
+                  <dd class="mono" :title="deployPreview?.nginxProxyTarget">
+                    {{ deployPreview?.nginxProxyTarget || "-" }}
+                  </dd>
+                </div>
+                <div class="preview-row wide">
+                  <dt>
+                    <AppTooltip
+                      class="field-help-label"
+                      content="关闭后仍会部署后端并检查 Docker 网络，但不会读取或诊断 Nginx 配置。"
+                    >Nginx 检查</AppTooltip>
+                  </dt>
+                  <dd>{{ deployForm.nginxProxyCheckEnabled ? "已启用" : "未启用" }}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="preview-commands">
+              <div class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">创建目录命令</p>
+                  <CopyButton
+                    v-if="deployPreview?.mkdirCommand"
+                    :value="deployPreview.mkdirCommand"
+                    label="复制命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ deployPreview?.mkdirCommand || '等待填写部署参数' }}</code></pre>
+                </div>
+              </div>
+
+              <div class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">挂载目录权限</p>
+                  <CopyButton
+                    v-if="deployPreview?.prepareDirectoriesCommand"
+                    :value="deployPreview.prepareDirectoriesCommand"
+                    label="复制命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ deployPreview?.prepareDirectoriesCommand || '等待填写部署参数' }}</code></pre>
+                </div>
+              </div>
+
+              <div class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">Docker Run</p>
+                  <CopyButton
+                    v-if="deployPreview?.runCommand"
+                    :value="deployPreview.runCommand"
+                    label="复制命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ deployPreview?.runCommand || '等待填写部署参数' }}</code></pre>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-if="isDeploying || deployResult" class="package-result-block">
+            <RunProgress
+              :active="isDeploying"
+              :result="deployResult"
+              :stages="DEPLOY_STAGES"
+              running-text="正在部署镜像包…"
+            />
+            <div
+              v-if="deployResult?.warnings?.length"
+              class="deploy-warning-list"
+              role="status"
             >
-              <span v-if="isDeploying" class="btn-spinner" aria-hidden="true"></span>
-              {{ isDeploying ? "部署中…" : "开始部署" }}
-            </button>
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="!hasDeploymentBridge"
-              @click="refreshDeployPreview"
-            >
-              刷新预览
-            </button>
-            <button
-              class="secondary-button"
-              type="button"
-              @click="emit('open-logs')"
-            >
-              查看日志
-            </button>
+              <div class="deploy-warning-head">
+                <AlertTriangle :size="16" aria-hidden="true" />
+                <strong>Nginx 检查警告</strong>
+              </div>
+              <p v-for="warning in deployResult.warnings" :key="warning.code + warning.message">
+                {{ warning.message }}
+              </p>
+            </div>
+            <div v-if="deployResult && !isDeploying" class="command-meta">
+              <span class="command-stat"
+                >容器: {{ deployResult.containerName || "-" }}</span
+              >
+              <span class="command-stat"
+                >镜像: {{ deployResult.imageRef || "-" }}</span
+              >
+            </div>
           </div>
+        </div>
+      </div>
 
-          <div
-            class="deploy-action-status"
-            :class="{
-              active: isDeploying,
-              ok: deployResult?.ok,
-              failed: deployResult && !deployResult.ok,
-            }"
+      <footer class="console-foot">
+        <div class="console-status">
+          <span class="state-pill" :class="deployTone">{{ deployLabel }}</span>
+          <p class="console-hint" :title="deployHint">{{ deployHint }}</p>
+        </div>
+        <div class="console-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="!hasDeploymentBridge"
+            @click="refreshDeployPreview"
           >
-            <span></span>
-            <p class="command-hint">{{ deployHint }}</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="panel deploy-panel deploy-preview-panel">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Deployment Plan</p>
-          <h3>部署预览</h3>
-        </div>
-        <span class="state-pill">{{ deployPreview ? "已就绪" : "待生成" }}</span>
-      </div>
-
-      <div class="deploy-preview-body">
-        <div class="preview-identity" :class="{ empty: !deployPreview?.imageRef }">
-          <div class="preview-identity-main">
-            <span class="preview-identity-label">镜像引用</span>
-            <strong :title="deployPreview?.imageRef">{{ deployPreview?.imageRef || "等待填写部署参数" }}</strong>
-          </div>
-          <CopyButton
-            v-if="deployPreview?.imageRef"
-            :value="deployPreview.imageRef"
-            label="复制镜像引用"
-          />
-        </div>
-
-        <div class="preview-groups">
-          <section class="preview-group">
-            <p class="preview-group-title">容器</p>
-            <dl class="preview-list">
-              <div class="preview-row">
-                <dt>容器名</dt>
-                <dd :title="deployPreview?.containerName">{{ deployPreview?.containerName || "-" }}</dd>
-              </div>
-              <div class="preview-row">
-                <dt>端口映射</dt>
-                <dd>{{ deployPreview?.hostPort || "-" }} → {{ deployPreview?.containerPort || "-" }}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section class="preview-group">
-            <p class="preview-group-title">远程路径</p>
-            <dl class="preview-list">
-              <div class="preview-row">
-                <dt>远程包</dt>
-                <dd class="mono" :title="deployPreview?.remotePackagePath">{{ deployPreview?.remotePackagePath || "-" }}</dd>
-              </div>
-              <div class="preview-row">
-                <dt>发布目录</dt>
-                <dd class="mono" :title="deployPreview?.remoteReleaseDir">{{ deployPreview?.remoteReleaseDir || "-" }}</dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-
-        <section class="preview-group">
-          <p class="preview-group-title">运行配置</p>
-          <dl class="preview-list">
-            <div class="preview-row wide">
-              <dt>环境变量</dt>
-              <dd>{{ environmentLines.join(" | ") || "暂无" }}</dd>
-            </div>
-            <div class="preview-row wide">
-              <dt>挂载目录</dt>
-              <dd>{{ mountLines.join(" | ") || "暂无" }}</dd>
-            </div>
-            <div class="preview-row wide">
-              <dt>
-                <AppTooltip class="field-help-label" content="后端容器将加入的 Docker 网络。">
-                  Docker 网络
-                </AppTooltip>
-              </dt>
-              <dd class="mono">{{ deployPreview?.networkName || "-" }}</dd>
-            </div>
-            <div v-if="deployForm.nginxProxyCheckEnabled" class="preview-row wide">
-              <dt>
-                <AppTooltip
-                  class="field-help-label"
-                  content="Nginx 在 Docker 网络内访问后端时应使用的容器名和容器端口。"
-                >Nginx 代理目标</AppTooltip>
-              </dt>
-              <dd class="mono" :title="deployPreview?.nginxProxyTarget">
-                {{ deployPreview?.nginxProxyTarget || "-" }}
-              </dd>
-            </div>
-            <div class="preview-row wide">
-              <dt>
-                <AppTooltip
-                  class="field-help-label"
-                  content="关闭后仍会部署后端并检查 Docker 网络，但不会读取或诊断 Nginx 配置。"
-                >Nginx 检查</AppTooltip>
-              </dt>
-              <dd>{{ deployForm.nginxProxyCheckEnabled ? "已启用" : "未启用" }}</dd>
-            </div>
-          </dl>
-        </section>
-
-        <section class="preview-commands">
-          <div class="preview-command">
-            <div class="preview-group-head">
-              <p class="preview-group-title">创建目录命令</p>
-              <CopyButton
-                v-if="deployPreview?.mkdirCommand"
-                :value="deployPreview.mkdirCommand"
-                label="复制命令"
-              />
-            </div>
-            <div class="command-panel">
-              <pre><code>{{ deployPreview?.mkdirCommand || '等待填写部署参数' }}</code></pre>
-            </div>
-          </div>
-
-          <div class="preview-command">
-            <div class="preview-group-head">
-              <p class="preview-group-title">Docker Run</p>
-              <CopyButton
-                v-if="deployPreview?.runCommand"
-                :value="deployPreview.runCommand"
-                label="复制命令"
-              />
-            </div>
-            <div class="command-panel">
-              <pre><code>{{ deployPreview?.runCommand || '等待填写部署参数' }}</code></pre>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div v-if="isDeploying || deployResult" class="package-result-block">
-        <RunProgress
-          :active="isDeploying"
-          :result="deployResult"
-          :stages="DEPLOY_STAGES"
-          running-text="正在部署镜像包…"
-        />
-        <div
-          v-if="deployResult?.warnings?.length"
-          class="deploy-warning-list"
-          role="status"
-        >
-          <div class="deploy-warning-head">
-            <AlertTriangle :size="16" aria-hidden="true" />
-            <strong>Nginx 检查警告</strong>
-          </div>
-          <p v-for="warning in deployResult.warnings" :key="warning.code + warning.message">
-            {{ warning.message }}
-          </p>
-        </div>
-        <div v-if="deployResult && !isDeploying" class="command-meta">
-          <span class="command-stat"
-            >容器: {{ deployResult.containerName || "-" }}</span
+            刷新预览
+          </button>
+          <button
+            class="secondary-button"
+            type="button"
+            @click="emit('open-logs')"
           >
-          <span class="command-stat"
-            >镜像: {{ deployResult.imageRef || "-" }}</span
+            查看日志
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :class="{ 'is-loading': isDeploying }"
+            :aria-busy="isDeploying"
+            :disabled="!canDeploy || isDeploying"
+            @click="runDeployment"
           >
+            <span v-if="isDeploying" class="btn-spinner" aria-hidden="true"></span>
+            {{ isDeploying ? "部署中…" : "开始部署" }}
+          </button>
         </div>
-      </div>
+      </footer>
     </section>
   </div>
 </template>

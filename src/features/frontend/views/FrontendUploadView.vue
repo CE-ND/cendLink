@@ -2,9 +2,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertCircle,
+  ChevronRight,
   CircleCheck,
+  Container,
   FileArchive,
   RefreshCw,
+  Server,
   Trash2,
   Upload,
   UploadCloud,
@@ -15,6 +18,10 @@ import { usePageEntrance } from '../../../composables/usePageEntrance.js'
 import RunProgress from '../../workspace/components/RunProgress.vue'
 import CopyButton from '../../../components/ui/CopyButton.vue'
 import InlineDeleteConfirm from '../../../components/ui/InlineDeleteConfirm.vue'
+import {
+  AUTO_NGINX_PUBLISH_COMMAND,
+  buildDockerNginxPublishCommand,
+} from '../../../shared/nginxDeployment.js'
 
 const {
   savedServers,
@@ -62,6 +69,7 @@ const pendingProjectDelete = ref(null)
 const isDeletingProject = ref(false)
 const isArchiveDragActive = ref(false)
 const archiveDropError = ref('')
+const lastCustomNginxCommand = ref(buildDockerNginxPublishCommand())
 let archiveDragDepth = 0
 usePageEntrance(pageRef)
 
@@ -70,6 +78,39 @@ const extractStrategyOptions = [
   { value: 'backup', label: '备份替换' },
   { value: 'overwrite', label: '直接覆盖' },
 ]
+
+const isAutomaticNginxRestart = computed(() => {
+  return frontendForm.nginxRestartCommand === AUTO_NGINX_PUBLISH_COMMAND
+})
+
+const nginxRestartModeLabel = computed(() => {
+  return isAutomaticNginxRestart.value ? '自动适配 Docker / 系统服务' : '自定义命令'
+})
+
+const nginxRestartPreviewText = computed(() => {
+  if (isAutomaticNginxRestart.value) {
+    return 'Docker · nginx\n未检测到时 → systemd · nginx.service'
+  }
+
+  return frontendUploadPreview.value?.restartCommand || frontendForm.nginxRestartCommand || '等待填写 Nginx 命令'
+})
+
+watch(
+  () => frontendForm.nginxRestartCommand,
+  (command) => {
+    if (command?.trim() && command !== AUTO_NGINX_PUBLISH_COMMAND) {
+      lastCustomNginxCommand.value = command
+    }
+  },
+  { immediate: true },
+)
+
+function setNginxRestartMode(mode) {
+  updateFrontendForm({
+    nginxRestartCommand:
+      mode === 'auto' ? AUTO_NGINX_PUBLISH_COMMAND : lastCustomNginxCommand.value,
+  })
+}
 
 const selectedServer = computed(() => {
   return savedServers.value.find((item) => item.id === activeServerId.value) || null
@@ -136,16 +177,30 @@ const nginxResultLabel = computed(() => {
     return '未执行'
   }
 
-  return frontendUploadResult.value.nginxRestarted ? '已完成' : '执行失败'
+  if (!frontendUploadResult.value.nginxRestarted) {
+    return '执行失败'
+  }
+
+  const runtimeLabels = {
+    docker: 'Docker 已重载',
+    systemd: '系统服务已重载',
+    custom: '自定义命令已完成',
+    auto: '自动适配已完成',
+  }
+
+  return runtimeLabels[frontendUploadResult.value.nginxRuntime] || '已完成'
 })
 
-const uploadSummaryItems = computed(() => {
-  return [
-    { label: '目标', value: selectedServer.value ? selectedServer.value.name : '未选择' },
-    { label: '项目目录', value: frontendForm.projectDir || '-' },
-    { label: '发布策略', value: strategyLabel.value },
-    { label: 'Nginx', value: frontendForm.restartNginx ? '执行发布后动作' : '不执行' },
-  ]
+// 上传态胶囊：两张面板合并后，原本 panel-header 上的胶囊由页尾操作条统一持有。
+const uploadTone = computed(() => {
+  if (isUploadingFrontend.value) return 'running'
+  if (!frontendUploadResult.value) return ''
+  return frontendUploadResult.value.ok ? 'success' : 'failed'
+})
+
+const uploadLabel = computed(() => {
+  if (isUploadingFrontend.value) return 'Uploading'
+  return frontendUploadResult.value?.status || 'Idle'
 })
 
 async function saveCurrentFrontendProject() {
@@ -390,34 +445,12 @@ watch(
 </script>
 
 <template>
-  <div ref="pageRef" class="deploy-view frontend-upload-view">
-    <section class="panel deploy-panel deploy-form-panel frontend-upload-form-panel">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Frontend Upload</p>
-          <h3>前端静态包发布</h3>
-        </div>
-        <span
-          class="state-pill"
-          :class="{
-            success: frontendUploadResult?.ok && !isUploadingFrontend,
-            failed: frontendUploadResult && !frontendUploadResult.ok && !isUploadingFrontend,
-            running: isUploadingFrontend,
-          }"
-        >
-          {{ isUploadingFrontend ? 'Uploading' : frontendUploadResult?.status || 'Idle' }}
-        </span>
-      </div>
-
-      <div class="deploy-form-body">
-        <div class="deploy-fields">
-          <section class="deploy-section service-template-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">前端项目</span>
-                <strong>路径与策略</strong>
-              </div>
-            </div>
+  <div ref="pageRef" class="frontend-upload-view">
+    <section class="frontend-console">
+      <div class="frontend-body">
+        <div class="frontend-fields-col">
+          <div class="form-group">
+            <p class="form-group-title">前端项目</p>
 
             <div class="template-picker-row service-template-row">
               <AppSelect
@@ -546,14 +579,11 @@ watch(
               <AlertCircle v-else :size="14" aria-hidden="true" />
               <span>{{ frontendProjectSaveNotice.message }}</span>
             </div>
-          </section>
+          </div>
 
-          <section class="deploy-section frontend-archive-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">前端压缩包</span>
-                <strong>构建产物</strong>
-              </div>
+          <div class="form-group">
+            <div class="form-group-head">
+              <p class="form-group-title">前端压缩包</p>
               <span class="deploy-source-pill">zip / tar</span>
             </div>
 
@@ -616,36 +646,15 @@ watch(
                   : '请通过 Electron 模式选择本地文件'
               }}
             </small>
-          </section>
+          </div>
 
-          <section class="deploy-section deploy-target-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">目标确认</span>
-                <strong>服务器与发布目录</strong>
-              </div>
-            </div>
+          <div class="form-group">
+            <p class="form-group-title">发布目标</p>
 
             <label class="field">
               <span>目标服务器</span>
               <input :value="targetServerLabel" type="text" readonly />
             </label>
-
-            <div class="deploy-confirm-strip">
-              <span v-for="item in uploadSummaryItems" :key="item.label">
-                <small>{{ item.label }}</small>
-                <b>{{ item.value }}</b>
-              </span>
-            </div>
-          </section>
-
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">Nginx 目录</span>
-                <strong>基础路径与项目路径</strong>
-              </div>
-            </div>
 
             <div class="field-row compact-row">
               <label class="field fill">
@@ -684,15 +693,10 @@ watch(
                 />
               </label>
             </div>
-          </section>
+          </div>
 
-          <section class="deploy-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">发布选项</span>
-                <strong>解压、校验与远程包</strong>
-              </div>
-            </div>
+          <div class="form-group">
+            <p class="form-group-title">发布选项</p>
 
             <div class="field-row compact-row">
               <label class="field fill">
@@ -722,24 +726,29 @@ watch(
                   @input="updateFrontendForm({ remoteUploadDir: $event.target.value })"
                 />
               </label>
-              <label class="field checkbox-field frontend-keep-archive">
-                <input
-                  :checked="frontendForm.keepRemoteArchive"
-                  type="checkbox"
-                  @change="updateFrontendForm({ keepRemoteArchive: $event.target.checked })"
-                />
-                <span>保留远程压缩包</span>
-              </label>
-            </div>
-          </section>
-
-          <section class="deploy-section frontend-nginx-section">
-            <div class="deploy-section-header">
-              <div>
-                <span class="field-prompt">发布后动作</span>
-                <strong>Nginx 服务</strong>
+              <div class="field fill">
+                <span>远程压缩包</span>
+                <button
+                  type="button"
+                  class="deploy-check-switch"
+                  :class="{ active: frontendForm.keepRemoteArchive }"
+                  role="switch"
+                  :aria-checked="frontendForm.keepRemoteArchive"
+                  @click="
+                    updateFrontendForm({
+                      keepRemoteArchive: !frontendForm.keepRemoteArchive,
+                    })
+                  "
+                >
+                  <span>{{ frontendForm.keepRemoteArchive ? '发布后保留' : '发布后删除' }}</span>
+                  <span class="deploy-check-switch-track" aria-hidden="true"><i></i></span>
+                </button>
               </div>
             </div>
+          </div>
+
+          <div class="form-group">
+            <p class="form-group-title">发布后动作</p>
 
             <button
               type="button"
@@ -760,8 +769,49 @@ watch(
               <span class="frontend-restart-track" aria-hidden="true"><i></i></span>
             </button>
 
+            <div v-if="frontendForm.restartNginx" class="field frontend-nginx-mode">
+              <span>执行方式</span>
+              <div
+                class="segmented frontend-nginx-segmented"
+                :class="{ 'is-custom': !isAutomaticNginxRestart }"
+                role="group"
+                aria-label="Nginx 发布后执行方式"
+              >
+                <span class="segment-thumb" aria-hidden="true"></span>
+                <button
+                  type="button"
+                  :class="{ selected: isAutomaticNginxRestart }"
+                  :aria-pressed="isAutomaticNginxRestart"
+                  :disabled="isUploadingFrontend"
+                  @click="setNginxRestartMode('auto')"
+                >
+                  自动适配
+                </button>
+                <button
+                  type="button"
+                  :class="{ selected: !isAutomaticNginxRestart }"
+                  :aria-pressed="!isAutomaticNginxRestart"
+                  :disabled="isUploadingFrontend"
+                  @click="setNginxRestartMode('custom')"
+                >
+                  自定义命令
+                </button>
+              </div>
+
+              <div
+                v-if="isAutomaticNginxRestart"
+                class="frontend-nginx-runtime-route"
+                role="img"
+                aria-label="优先使用 Docker 容器 nginx，未检测到时回退到系统服务 nginx.service"
+              >
+                <span><Container :size="14" /> Docker · nginx</span>
+                <ChevronRight :size="14" aria-hidden="true" />
+                <span><Server :size="14" /> systemd · nginx.service</span>
+              </div>
+            </div>
+
             <label
-              v-if="frontendForm.restartNginx"
+              v-if="frontendForm.restartNginx && !isAutomaticNginxRestart"
               class="field frontend-restart-command"
               :class="{ 'is-invalid': !frontendForm.nginxRestartCommand.trim() }"
             >
@@ -780,173 +830,167 @@ watch(
                 启用后需要填写发布后命令
               </small>
             </label>
-          </section>
+          </div>
         </div>
 
-        <div class="package-actions deploy-actions">
-          <div class="panel-actions">
-            <button
-              class="primary-button"
-              type="button"
-              :class="{ 'is-loading': isUploadingFrontend }"
-              :aria-busy="isUploadingFrontend"
-              :disabled="!canUploadFrontend || isUploadingFrontend"
-              @click="runFrontendUpload"
-            >
-              <span v-if="isUploadingFrontend" class="btn-spinner" aria-hidden="true"></span>
-              {{ isUploadingFrontend ? '上传中…' : '开始上传' }}
-            </button>
-            <button
-              class="secondary-button"
-              type="button"
-              :disabled="!hasFrontendUploadBridge"
-              @click="refreshFrontendUploadPreview"
-            >
-              刷新预览
-            </button>
-            <button class="secondary-button" type="button" @click="emit('open-logs')">查看日志</button>
-          </div>
-
+        <div class="frontend-preview-col">
           <div
-            class="deploy-action-status"
-            :class="{ active: isUploadingFrontend, ok: frontendUploadResult?.ok, failed: frontendUploadResult && !frontendUploadResult.ok }"
+            class="preview-identity"
+            :class="{ empty: !(frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir) }"
           >
-            <span></span>
-            <p class="command-hint">{{ frontendUploadHint }}</p>
+            <div class="preview-identity-main">
+              <span class="preview-identity-label">发布目录</span>
+              <strong :title="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir">
+                {{ frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir || '等待填写上传参数' }}
+              </strong>
+            </div>
+            <CopyButton
+              v-if="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
+              :value="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
+              label="复制发布目录"
+            />
+          </div>
+
+          <div class="preview-groups">
+            <section class="preview-group">
+              <p class="preview-group-title">远程路径</p>
+              <dl class="preview-list">
+                <div class="preview-row">
+                  <dt>目标服务器</dt>
+                  <dd :title="targetServerLabel">{{ targetServerLabel }}</dd>
+                </div>
+                <div class="preview-row">
+                  <dt>基础路径</dt>
+                  <dd class="mono" :title="frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir">
+                    {{ frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir || '-' }}
+                  </dd>
+                </div>
+                <div class="preview-row">
+                  <dt>项目目录</dt>
+                  <dd :title="frontendUploadPreview?.projectDir || frontendForm.projectDir">
+                    {{ frontendUploadPreview?.projectDir || frontendForm.projectDir || '-' }}
+                  </dd>
+                </div>
+              </dl>
+            </section>
+
+            <section class="preview-group">
+              <p class="preview-group-title">发布配置</p>
+              <dl class="preview-list">
+                <div class="preview-row">
+                  <dt>远程压缩包</dt>
+                  <dd class="mono" :title="frontendUploadPreview?.remoteArchivePath">
+                    {{ frontendUploadPreview?.remoteArchivePath || '-' }}
+                  </dd>
+                </div>
+                <div class="preview-row">
+                  <dt>发布策略</dt>
+                  <dd>{{ strategyLabel }}</dd>
+                </div>
+                <div class="preview-row">
+                  <dt>入口文件</dt>
+                  <dd>{{ frontendForm.entryFile || 'index.html' }}</dd>
+                </div>
+                <div class="preview-row">
+                  <dt>Nginx 动作</dt>
+                  <dd>{{ frontendForm.restartNginx ? nginxRestartModeLabel : '未启用' }}</dd>
+                </div>
+              </dl>
+            </section>
+          </div>
+
+          <div class="frontend-preview-scroll">
+            <section class="preview-commands">
+              <div class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">远程预检</p>
+                  <CopyButton
+                    v-if="frontendUploadPreview?.precheckCommand"
+                    :value="frontendUploadPreview.precheckCommand"
+                    label="复制命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ frontendUploadPreview?.precheckCommand || '等待填写上传参数' }}</code></pre>
+                </div>
+              </div>
+
+              <div class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">发布动作</p>
+                  <CopyButton
+                    v-if="frontendUploadPreview?.publishCommand"
+                    :value="frontendUploadPreview.publishCommand"
+                    label="复制命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ frontendUploadPreview?.publishCommand || '等待选择前端压缩包' }}</code></pre>
+                </div>
+              </div>
+
+              <div v-if="frontendForm.restartNginx" class="preview-command">
+                <div class="preview-group-head">
+                  <p class="preview-group-title">Nginx 发布后动作</p>
+                  <CopyButton
+                    v-if="frontendUploadPreview?.restartCommand"
+                    :value="frontendUploadPreview.restartCommand"
+                    label="复制 Nginx 命令"
+                  />
+                </div>
+                <div class="command-panel">
+                  <pre><code>{{ nginxRestartPreviewText }}</code></pre>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div v-if="isUploadingFrontend || frontendUploadResult" class="package-result-block">
+            <RunProgress
+              :active="isUploadingFrontend"
+              :result="frontendUploadResult"
+              :stages="frontendStages"
+              :running-text="frontendForm.restartNginx ? '正在发布前端包并处理 Nginx…' : '正在上传并发布前端包…'"
+            />
+            <div v-if="frontendUploadResult && !isUploadingFrontend" class="command-meta">
+              <span class="command-stat">文件: {{ frontendUploadResult.publishedFileCount || 0 }}</span>
+              <span class="command-stat">备份: {{ frontendUploadResult.backupDir || '-' }}</span>
+              <span class="command-stat">Nginx: {{ nginxResultLabel }}</span>
+            </div>
           </div>
         </div>
       </div>
-    </section>
 
-    <section class="panel deploy-panel deploy-preview-panel frontend-upload-preview-panel">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">Upload Plan</p>
-          <h3>上传预览</h3>
+      <footer class="console-foot">
+        <div class="console-status">
+          <span class="state-pill" :class="uploadTone">{{ uploadLabel }}</span>
+          <p class="console-hint" :title="frontendUploadHint">{{ frontendUploadHint }}</p>
         </div>
-        <span class="state-pill">{{ frontendUploadPreview ? '已就绪' : '待生成' }}</span>
-      </div>
-
-      <div class="deploy-preview-body">
-        <div
-          class="preview-identity"
-          :class="{ empty: !(frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir) }"
-        >
-          <div class="preview-identity-main">
-            <span class="preview-identity-label">发布目录</span>
-            <strong :title="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir">
-              {{ frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir || '等待填写上传参数' }}
-            </strong>
-          </div>
-          <CopyButton
-            v-if="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
-            :value="frontendUploadPreview?.remoteTargetDir || frontendForm.remoteTargetDir"
-            label="复制发布目录"
-          />
+        <div class="console-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            :disabled="!hasFrontendUploadBridge"
+            @click="refreshFrontendUploadPreview"
+          >
+            刷新预览
+          </button>
+          <button class="secondary-button" type="button" @click="emit('open-logs')">
+            查看日志
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            :class="{ 'is-loading': isUploadingFrontend }"
+            :aria-busy="isUploadingFrontend"
+            :disabled="!canUploadFrontend || isUploadingFrontend"
+            @click="runFrontendUpload"
+          >
+            <span v-if="isUploadingFrontend" class="btn-spinner" aria-hidden="true"></span>
+            {{ isUploadingFrontend ? '上传中…' : '开始上传' }}
+          </button>
         </div>
-
-        <div class="preview-groups">
-          <section class="preview-group">
-            <p class="preview-group-title">远程路径</p>
-            <dl class="preview-list">
-              <div class="preview-row">
-                <dt>基础路径</dt>
-                <dd class="mono" :title="frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir">
-                  {{ frontendUploadPreview?.remoteBaseDir || frontendForm.remoteBaseDir || '-' }}
-                </dd>
-              </div>
-              <div class="preview-row">
-                <dt>项目目录</dt>
-                <dd :title="frontendUploadPreview?.projectDir || frontendForm.projectDir">
-                  {{ frontendUploadPreview?.projectDir || frontendForm.projectDir || '-' }}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section class="preview-group">
-            <p class="preview-group-title">发布配置</p>
-            <dl class="preview-list">
-              <div class="preview-row">
-                <dt>远程压缩包</dt>
-                <dd class="mono" :title="frontendUploadPreview?.remoteArchivePath">
-                  {{ frontendUploadPreview?.remoteArchivePath || '-' }}
-                </dd>
-              </div>
-              <div class="preview-row">
-                <dt>发布策略</dt>
-                <dd>{{ strategyLabel }}</dd>
-              </div>
-              <div class="preview-row">
-                <dt>入口文件</dt>
-                <dd>{{ frontendForm.entryFile || 'index.html' }}</dd>
-              </div>
-              <div class="preview-row">
-                <dt>Nginx 动作</dt>
-                <dd>{{ frontendForm.restartNginx ? '已启用' : '未启用' }}</dd>
-              </div>
-            </dl>
-          </section>
-        </div>
-
-        <section class="preview-commands">
-          <div class="preview-command">
-            <div class="preview-group-head">
-              <p class="preview-group-title">远程预检</p>
-              <CopyButton
-                v-if="frontendUploadPreview?.precheckCommand"
-                :value="frontendUploadPreview.precheckCommand"
-                label="复制命令"
-              />
-            </div>
-            <div class="command-panel">
-              <pre><code>{{ frontendUploadPreview?.precheckCommand || '等待填写上传参数' }}</code></pre>
-            </div>
-          </div>
-
-          <div class="preview-command">
-            <div class="preview-group-head">
-              <p class="preview-group-title">发布动作</p>
-              <CopyButton
-                v-if="frontendUploadPreview?.publishCommand"
-                :value="frontendUploadPreview.publishCommand"
-                label="复制命令"
-              />
-            </div>
-            <div class="command-panel">
-              <pre><code>{{ frontendUploadPreview?.publishCommand || '等待选择前端压缩包' }}</code></pre>
-            </div>
-          </div>
-
-          <div v-if="frontendForm.restartNginx" class="preview-command">
-            <div class="preview-group-head">
-              <p class="preview-group-title">Nginx 发布后动作</p>
-              <CopyButton
-                v-if="frontendUploadPreview?.restartCommand"
-                :value="frontendUploadPreview.restartCommand"
-                label="复制 Nginx 命令"
-              />
-            </div>
-            <div class="command-panel">
-              <pre><code>{{ frontendUploadPreview?.restartCommand || frontendForm.nginxRestartCommand || '等待填写 Nginx 命令' }}</code></pre>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div v-if="isUploadingFrontend || frontendUploadResult" class="package-result-block">
-        <RunProgress
-          :active="isUploadingFrontend"
-          :result="frontendUploadResult"
-          :stages="frontendStages"
-          :running-text="frontendForm.restartNginx ? '正在发布前端包并处理 Nginx…' : '正在上传并发布前端包…'"
-        />
-        <div v-if="frontendUploadResult && !isUploadingFrontend" class="command-meta">
-          <span class="command-stat">文件: {{ frontendUploadResult.publishedFileCount || 0 }}</span>
-          <span class="command-stat">备份: {{ frontendUploadResult.backupDir || '-' }}</span>
-          <span class="command-stat">Nginx: {{ nginxResultLabel }}</span>
-        </div>
-      </div>
+      </footer>
     </section>
   </div>
 </template>

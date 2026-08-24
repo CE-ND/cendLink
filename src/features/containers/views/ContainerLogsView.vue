@@ -877,7 +877,7 @@ function formatStreamError(error) {
     </section>
 
     <section class="container-log-pane">
-      <header class="container-pane-header log-pane-header">
+      <header class="container-pane-header">
         <div>
           <strong>{{ selectedContainer?.name || "容器日志" }}</strong>
           <small>

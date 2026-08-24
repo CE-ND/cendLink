@@ -12,11 +12,14 @@ gsap.registerPlugin(Flip)
 const { deployments, deletingDeploymentIds, deleteDeploymentRecord } = useWorkspaceSession()
 
 const pageRef = ref(null)
+const scrollRef = ref(null)
 const gridRef = ref(null)
 usePageEntrance(pageRef)
 
 // 当前展开/收起的 Flip 补间，切换或卸载时打断，避免叠加。
 let flipTween = null
+// 把展开卡滚进视野的补间，同样需要可打断。
+let scrollTween = null
 
 const activeRecordType = ref('deploy')
 // 当前展开详情的记录 id；同一时刻只展开一条，保持列表密度。
@@ -102,6 +105,16 @@ watch(activeRecordType, () => {
   clearDeleteConfirm()
 })
 
+// 清掉补间期间钉在卡片上的内联尺寸变量。补间被打断时 onComplete 不会执行，
+// 所以每次开始前也清一遍，否则上一轮的终点尺寸会套到这一轮身上。
+function clearFlipPins(grid) {
+  grid.querySelectorAll('.history-card').forEach((card) => {
+    card.style.removeProperty('--flip-drawer-w')
+    card.style.removeProperty('--flip-drawer-h')
+    card.classList.remove('is-collapsing')
+  })
+}
+
 // 卡片放大/缩小用 GSAP Flip 做布局补间：grid 的 span 尺寸切换在 CSS 里不可过渡，
 // 这里捕获旧布局 → 切换展开态 → 从旧布局补间到新布局，邻卡顺势让位、抽屉淡入。
 // nextId 传 null 表示全部收起。
@@ -117,35 +130,98 @@ async function setExpanded(nextId) {
     return
   }
 
-  // 先停掉 CSS 过渡（改由 GSAP 独占），再捕获旧布局，避免两套动画打架。
+  clearFlipPins(grid)
+
+  // 让位的波从「被操作的那张卡」向两侧扩散，所以先记下它在列表里的位置。
+  const originId = nextId || expandedId.value
+  const originIndex = Math.max(
+    0,
+    visibleRecords.value.findIndex((item) => item.id === originId),
+  )
+
+  // 先停掉 transform 的 CSS 过渡（改由 GSAP 独占），再捕获旧布局，避免两套动画打架。
   grid.classList.add('is-flipping')
-  const state = Flip.getState(grid.querySelectorAll('.history-card'), { props: 'boxShadow' })
-  const heightBefore = grid.offsetHeight
+  // 只捕获几何。box-shadow 不交给 GSAP：那是个大半径阴影，跟着卡片一起放大时每帧都要
+  // 重绘一大片；交回 CSS 的过渡自己收尾更便宜，也不会和几何抢帧。
+  const state = Flip.getState(grid.querySelectorAll('.history-card'))
+  // 正在收起的那张卡：补间途中它还是放大尺寸，会溢出自己那一格 —— 不抬层的话会被
+  // 右侧和下方的邻卡盖住一角。这里先标记下来（此刻它还带着 .open）。
+  const collapsingCard = grid.querySelector('.history-card.open')
 
   expandedId.value = nextId
   await nextTick()
 
-  // 展开卡会被抽出常规流做绝对定位补间，先钉住网格高度，避免滚动区塌陷抖动。
-  grid.style.minHeight = `${Math.max(heightBefore, grid.scrollHeight)}px`
+  // 读：此刻 DOM 与网格都已落在终点状态，量到的就是抽屉的终点几何。
+  const openCard = grid.querySelector('.history-card.open')
+  const drawer = openCard?.querySelector('.history-drawer') || null
+  const drawerWidth = drawer?.offsetWidth || 0
+  const drawerHeight = drawer?.offsetHeight || 0
+  const openTop = openCard?.offsetTop || 0
+  const openHeight = openCard?.offsetHeight || 0
+
+  // 写：把抽屉钉在终点尺寸上，补间途中它一次都不重排（配合 .is-flipping 下的规则）。
+  if (drawer) {
+    openCard.style.setProperty('--flip-drawer-w', `${drawerWidth}px`)
+    openCard.style.setProperty('--flip-drawer-h', `${drawerHeight}px`)
+  }
+
+  if (collapsingCard && collapsingCard !== openCard) {
+    collapsingCard.classList.add('is-collapsing')
+  }
 
   flipTween?.kill()
   flipTween = Flip.from(state, {
-    duration: 0.44,
-    ease: 'power3.inOut',
-    absolute: true,
+    duration: 0.42,
+    ease: 'power2.inOut',
+    // absolute 关掉。列宽与行高都是定值（232px），所以改展开卡的 width/height 根本
+    // 挪不动任何其它网格项——它只是在自己那块 2×2 区域里从左上角长大。此前开着
+    // absolute，15 张卡全被抽出常规流，才被迫去钉网格高度，也才连带出滚动范围塌陷、
+    // 一帧滚动条那些问题。关掉之后网格从第一帧起就是终点高度，邻卡只走纯 transform。
+    absolute: false,
     scale: false,
+    // 没有旋转/斜切，走简化路径，省掉每帧的矩阵解析。
+    simple: true,
+    // 邻卡整片让位时按距离微错开，读起来是一道从被点卡片扩散出去的波，
+    // 而不是十几张卡同时齐刷刷平移。
+    stagger: { each: 0.012, from: originIndex },
     onComplete: () => {
-      grid.style.minHeight = ''
+      clearFlipPins(grid)
+      grid.classList.remove('is-flipping')
+    },
+    // 补间被打断时 onComplete 不会执行。不清的话 .is-flipping 会一直挂着，
+    // 它下面那几条只在补间期间成立的规则就成了常驻状态。
+    onInterrupt: () => {
+      clearFlipPins(grid)
       grid.classList.remove('is-flipping')
     },
   })
 
-  // 详情抽屉在放大到位过程中淡入上浮，遮住内容重排的生硬感。
-  const drawer = grid.querySelector('.history-card.open .history-drawer')
-
-  if (drawer) {
-    gsap.from(drawer, { autoAlpha: 0, y: 6, duration: 0.3, delay: 0.14, ease: 'power2.out' })
+  if (openCard) {
+    scrollOpenCardIntoView(openTop, openHeight)
   }
+}
+
+// 末行的卡片放大后长出视野时，把它带回来；已经完整可见就不动滚动位置。
+function scrollOpenCardIntoView(top, height) {
+  const scroll = scrollRef.value
+
+  if (!scroll || !height) {
+    return
+  }
+
+  const bottom = top + height
+  const viewBottom = scroll.scrollTop + scroll.clientHeight
+
+  if (top >= scroll.scrollTop && bottom <= viewBottom) {
+    return
+  }
+
+  scrollTween?.kill()
+  scrollTween = gsap.to(scroll, {
+    scrollTop: Math.max(0, bottom > viewBottom ? bottom - scroll.clientHeight : top),
+    duration: 0.42,
+    ease: 'power2.inOut',
+  })
 }
 
 function toggleExpanded(id) {
@@ -185,6 +261,8 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleOutsideClick)
   flipTween?.kill()
   flipTween = null
+  scrollTween?.kill()
+  scrollTween = null
   clearDeleteConfirm()
 })
 
@@ -409,86 +487,88 @@ async function copyValue(key, value) {
     </div>
 
     <template v-else>
-      <div ref="gridRef" class="history-grid">
-        <article
-          v-for="item in visibleRecords"
-          :key="item.id"
-          class="history-card"
-          :class="{ open: expandedId === item.id }"
-        >
-          <button
-            type="button"
-            class="history-card-face"
-            :aria-expanded="expandedId === item.id"
-            @click="toggleExpanded(item.id)"
+      <div ref="scrollRef" class="history-scroll">
+        <div ref="gridRef" class="history-grid">
+          <article
+            v-for="item in visibleRecords"
+            :key="item.id"
+            class="history-card"
+            :class="{ open: expandedId === item.id }"
           >
-            <span class="history-card-body">
-              <strong class="history-card-title">{{ getRecordTitle(item) }}</strong>
-              <small class="history-card-summary">{{ getRecordSummary(item) }}</small>
-            </span>
-            <span class="history-card-foot">
-              <span class="history-status" :class="getStatusMeta(item.status).tone">
-                <span class="status-dot" :class="getStatusMeta(item.status).tone"></span>
-                {{ getStatusMeta(item.status).label }}
+            <button
+              type="button"
+              class="history-card-face"
+              :aria-expanded="expandedId === item.id"
+              @click="toggleExpanded(item.id)"
+            >
+              <span class="history-card-body">
+                <strong class="history-card-title">{{ getRecordTitle(item) }}</strong>
+                <small class="history-card-summary">{{ getRecordSummary(item) }}</small>
               </span>
-              <span class="history-time">{{ formatTime(item.createdAt) }}</span>
-            </span>
-          </button>
+              <span class="history-card-foot">
+                <span class="history-status" :class="getStatusMeta(item.status).tone">
+                  <span class="status-dot" :class="getStatusMeta(item.status).tone"></span>
+                  {{ getStatusMeta(item.status).label }}
+                </span>
+                <span class="history-time">{{ formatTime(item.createdAt) }}</span>
+              </span>
+            </button>
 
-          <button
-            type="button"
-            class="history-delete"
-            :class="{ confirming: confirmingDeleteId === item.id }"
-            :disabled="deletingDeploymentIds.includes(item.id)"
-            :title="
-              deletingDeploymentIds.includes(item.id)
-                ? '删除中…'
-                : confirmingDeleteId === item.id
-                ? '再次点击确认删除'
-                : '删除记录'
-            "
-            :aria-label="confirmingDeleteId === item.id ? '确认删除记录' : '删除记录'"
-            @click.stop="requestDelete(item.id)"
-          >
-            <template v-if="confirmingDeleteId === item.id">
-              <Trash2 :size="13" />
-              确认
-            </template>
-            <Trash2 v-else :size="15" />
-          </button>
-
-          <div v-if="expandedId === item.id" class="history-drawer">
-            <p v-if="item.errorSummary" class="history-error">
-              <span class="history-error-tag">错误</span>
-              <span class="history-error-text">{{ item.errorSummary }}</span>
-            </p>
-
-            <dl class="history-detail-grid">
-              <template
-                v-for="detail in getDetailItems(item)"
-                :key="`${item.id}-${detail.label}`"
-              >
-                <dt>{{ detail.label }}</dt>
-                <dd :class="{ command: detail.command }">
-                  <template v-if="detail.command">
-                    <pre class="history-command"><code>{{ detail.value }}</code></pre>
-                    <button
-                      type="button"
-                      class="history-copy"
-                      :title="copiedKey === `${item.id}-${detail.label}` ? '已复制' : '复制命令'"
-                      @click.stop="copyValue(`${item.id}-${detail.label}`, detail.value)"
-                    >
-                      <Check v-if="copiedKey === `${item.id}-${detail.label}`" :size="13" />
-                      <Copy v-else :size="13" />
-                      {{ copiedKey === `${item.id}-${detail.label}` ? '已复制' : '复制' }}
-                    </button>
-                  </template>
-                  <span v-else class="history-detail-text">{{ detail.value }}</span>
-                </dd>
+            <button
+              type="button"
+              class="history-delete"
+              :class="{ confirming: confirmingDeleteId === item.id }"
+              :disabled="deletingDeploymentIds.includes(item.id)"
+              :title="
+                deletingDeploymentIds.includes(item.id)
+                  ? '删除中…'
+                  : confirmingDeleteId === item.id
+                  ? '再次点击确认删除'
+                  : '删除记录'
+              "
+              :aria-label="confirmingDeleteId === item.id ? '确认删除记录' : '删除记录'"
+              @click.stop="requestDelete(item.id)"
+            >
+              <template v-if="confirmingDeleteId === item.id">
+                <Trash2 :size="13" />
+                确认
               </template>
-            </dl>
-          </div>
-        </article>
+              <Trash2 v-else :size="15" />
+            </button>
+
+            <div v-if="expandedId === item.id" class="history-drawer">
+              <p v-if="item.errorSummary" class="history-error">
+                <span class="history-error-tag">错误</span>
+                <span class="history-error-text">{{ item.errorSummary }}</span>
+              </p>
+
+              <dl class="history-detail-grid">
+                <template
+                  v-for="detail in getDetailItems(item)"
+                  :key="`${item.id}-${detail.label}`"
+                >
+                  <dt>{{ detail.label }}</dt>
+                  <dd :class="{ command: detail.command }">
+                    <template v-if="detail.command">
+                      <pre class="history-command"><code>{{ detail.value }}</code></pre>
+                      <button
+                        type="button"
+                        class="history-copy"
+                        :title="copiedKey === `${item.id}-${detail.label}` ? '已复制' : '复制命令'"
+                        @click.stop="copyValue(`${item.id}-${detail.label}`, detail.value)"
+                      >
+                        <Check v-if="copiedKey === `${item.id}-${detail.label}`" :size="13" />
+                        <Copy v-else :size="13" />
+                        {{ copiedKey === `${item.id}-${detail.label}` ? '已复制' : '复制' }}
+                      </button>
+                    </template>
+                    <span v-else class="history-detail-text">{{ detail.value }}</span>
+                  </dd>
+                </template>
+              </dl>
+            </div>
+          </article>
+        </div>
       </div>
 
       <p class="history-foot">

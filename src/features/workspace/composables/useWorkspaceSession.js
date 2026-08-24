@@ -8,9 +8,9 @@ import {
   parseDockerfileText,
 } from '../../../shared/dockerfileTemplates.js'
 import {
+  AUTO_NGINX_PUBLISH_COMMAND,
   DEFAULT_DOCKER_NETWORK,
   DEFAULT_NGINX_CONTAINER_NAME,
-  buildDockerNginxPublishCommand,
   resolveDockerNetworkConfig,
 } from '../../../shared/nginxDeployment.js'
 import { buildServerMetricsCommand, parseServerMetrics } from '../../connections/utils/serverMetrics.js'
@@ -21,7 +21,7 @@ const MAX_COMMAND_TIMEOUT_SECONDS = 600
 const DEFAULT_FRONTEND_REMOTE_BASE_DIR = '/opt/app/nginx/html'
 const DEFAULT_FRONTEND_REMOTE_UPLOAD_DIR = '/opt/cendlink/frontend-packages'
 const DEFAULT_FRONTEND_ENTRY_FILE = 'index.html'
-const DEFAULT_NGINX_RESTART_COMMAND = buildDockerNginxPublishCommand()
+const DEFAULT_NGINX_RESTART_COMMAND = AUTO_NGINX_PUBLISH_COMMAND
 const DEPLOY_PACKAGE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar)$/i
 const FRONTEND_ARCHIVE_FILE_PATTERN = /\.(?:tar\.gz|tgz|tar|zip)$/i
 

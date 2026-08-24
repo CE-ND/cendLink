@@ -983,7 +983,7 @@ watch(
 
 <template>
   <div ref="pageRef" class="remote-file-manager-view">
-    <section class="remote-file-shell panel">
+    <section class="remote-file-shell">
       <header class="remote-file-toolbar">
         <div class="remote-file-history-actions" aria-label="目录导航">
           <button type="button" title="后退" aria-label="后退" :disabled="!canGoBack" @click="goBack">

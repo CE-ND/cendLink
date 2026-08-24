@@ -33,11 +33,14 @@ let active = true
 let opening = false
 
 // 浅色终端主题，色板对齐应用的设计 token（accent 青、success 绿、danger 红）。
+// background / cursorAccent 必须与 --terminal-stage（= --surface）逐位一致：
+// xterm 画布之外还有 .terminal-stage 的一圈内边距，两者对不上就会在终端四周
+// 描出一道亮边或暗框。终端与页面同色，命令页只有一层底色。
 const LIGHT_THEME = {
-  background: '#f7f9fa',
+  background: '#fafcfe',
   foreground: '#33383e',
   cursor: '#0e9aa1',
-  cursorAccent: '#f7f9fa',
+  cursorAccent: '#fafcfe',
   selectionBackground: 'rgba(16, 156, 163, 0.20)',
   selectionForeground: '#1f242a',
   black: '#3a4046',
@@ -60,10 +63,10 @@ const LIGHT_THEME = {
 
 // 深色终端主题：背景对齐 --terminal-stage 暗色值，色板整体提亮以在深底上保持对比。
 const DARK_THEME = {
-  background: '#22262c',
+  background: '#1a2026',
   foreground: '#d3d8dd',
   cursor: '#25c2ca',
-  cursorAccent: '#22262c',
+  cursorAccent: '#1a2026',
   selectionBackground: 'rgba(37, 194, 202, 0.28)',
   selectionForeground: '#eef1f3',
   black: '#2a2f35',
@@ -407,6 +410,7 @@ watch(theme, () => {
     <header class="terminal-topbar">
       <div class="terminal-identity">
         <span class="terminal-status-dot" :class="statusMeta.tone"></span>
+        <span class="terminal-state-text">{{ statusMeta.text }}</span>
         <span v-if="targetLabel" class="terminal-target">{{ targetLabel }}</span>
         <span v-else class="terminal-target muted">未连接服务器</span>
 
@@ -442,7 +446,6 @@ watch(theme, () => {
       </div>
 
       <div class="terminal-tools">
-        <span class="terminal-state-text">{{ statusMeta.text }}</span>
         <button v-if="showReconnect" type="button" class="terminal-tool-button" @click="openTerminalSession">
           重新连接
         </button>
@@ -467,7 +470,7 @@ watch(theme, () => {
 
       <div
         v-else-if="status === 'connecting'"
-        class="terminal-overlay terminal-overlay-connecting"
+        class="terminal-overlay"
       >
         <span class="terminal-connecting-dot" aria-hidden="true"></span>
         <p class="terminal-overlay-text">正在连接 {{ targetLabel }}…</p>
