@@ -1,4 +1,5 @@
 import electron from 'electron'
+import { setCloseToTrayEnabled } from '../main/trayManager.js'
 
 const { BrowserWindow } = electron
 
@@ -29,6 +30,11 @@ export function registerWindowHandlers(ipcMain) {
 
   ipcMain.handle('window:is-maximized', (event) => {
     return Boolean(getEventWindow(event)?.isMaximized())
+  })
+
+  // 渲染层保存设置后同步「关闭时最小化到托盘」开关，主进程立即生效。
+  ipcMain.handle('window:set-close-to-tray', (_event, enabled) => {
+    setCloseToTrayEnabled(enabled)
   })
 }
 

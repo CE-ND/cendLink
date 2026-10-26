@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
 import { useWorkspaceSession } from '../../workspace/composables/useWorkspaceSession.js'
 import { useTheme } from '../../../composables/useTheme.js'
@@ -23,6 +24,7 @@ const statusMessage = ref('')
 // 非响应式的 xterm 实例与插件，不放进 ref，避免被 Vue 代理。
 let term = null
 let fitAddon = null
+let webglAddon = null
 let resizeObserver = null
 let unsubscribe = null
 let lastCols = 0
@@ -337,7 +339,7 @@ function goServers() {
 onMounted(() => {
   term = new Terminal({
     theme: currentTerminalTheme(),
-    fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', ui-monospace, monospace",
+    fontFamily: "'Cascadia Mono', 'Cascadia Code', Consolas, 'SFMono-Regular', ui-monospace, 'Noto Sans SC', 'Microsoft YaHei UI', monospace",
     fontSize: 13,
     lineHeight: 1.2,
     cursorBlink: true,
@@ -347,6 +349,19 @@ onMounted(() => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(terminalHost.value)
+
+  // WebGL 渲染器比默认 Canvas 锐得多，尤其在 125%/150% 这类分数缩放下。
+  // 上下文丢失时退回 Canvas；环境不支持 WebGL 时直接忽略。
+  try {
+    webglAddon = new WebglAddon()
+    webglAddon.onContextLoss(() => {
+      webglAddon?.dispose()
+      webglAddon = null
+    })
+    term.loadAddon(webglAddon)
+  } catch {
+    webglAddon = null
+  }
 
   try {
     fitAddon.fit()
@@ -383,6 +398,7 @@ onBeforeUnmount(() => {
   term?.dispose()
   term = null
   fitAddon = null
+  webglAddon = null
 })
 
 // 连接态变化时联动终端：接入即开，断开即关。

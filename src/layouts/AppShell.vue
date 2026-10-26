@@ -27,6 +27,7 @@ const {
   createNewServer,
   pinServer,
   selectSavedServer,
+  connectSavedServer,
 } = useWorkspaceSession()
 
 // 主题状态：首帧已由 index.html 内联脚本 + localStorage 定好，这里挂载后再从 DB 校准一次。
@@ -150,6 +151,7 @@ onBeforeUnmount(() => {
       @create-server="createNewServer"
       @pin-server="pinServer"
       @select-server="selectSavedServer"
+      @connect-server="connectSavedServer"
       @open-settings="isSettingsOpen = true"
       @toggle-theme="toggleTheme"
     />

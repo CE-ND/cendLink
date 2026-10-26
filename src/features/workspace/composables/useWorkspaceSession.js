@@ -171,6 +171,8 @@ const selectedFrontendProjectId = ref('')
 // 工作区级别设置，保存到 app_settings。
 const workspaceSettings = reactive({
   commandTimeoutSeconds: DEFAULT_COMMAND_TIMEOUT_SECONDS,
+  // 点击标题栏关闭按钮时隐藏到系统托盘而不是退出，主进程读这个值决定 close 行为。
+  minimizeToTray: false,
 })
 const settingsResult = ref(null)
 const isSavingSettings = ref(false)
@@ -994,6 +996,11 @@ function updateWorkspaceSettings(nextValue) {
     workspaceSettings.commandTimeoutSeconds = normalizeCommandTimeoutSeconds(nextValue.commandTimeoutSeconds)
     settingsResult.value = null
   }
+
+  if (Object.prototype.hasOwnProperty.call(nextValue || {}, 'minimizeToTray')) {
+    workspaceSettings.minimizeToTray = Boolean(nextValue.minimizeToTray)
+    settingsResult.value = null
+  }
 }
 
 async function saveWorkspaceSettings() {
@@ -1009,15 +1016,23 @@ async function saveWorkspaceSettings() {
 
   const commandTimeoutSeconds = normalizeCommandTimeoutSeconds(workspaceSettings.commandTimeoutSeconds)
   workspaceSettings.commandTimeoutSeconds = commandTimeoutSeconds
+  const minimizeToTray = Boolean(workspaceSettings.minimizeToTray)
+  workspaceSettings.minimizeToTray = minimizeToTray
   isSavingSettings.value = true
 
   try {
     await bridge.settings.set('commandTimeoutSeconds', commandTimeoutSeconds)
+    await bridge.settings.set('minimizeToTray', minimizeToTray)
+    // 主进程的 close 拦截读的是内存标志，保存后立即同步，不用等下次启动。
+    await bridge.windowControls?.setCloseToTray?.(minimizeToTray)
     settingsResult.value = {
       ok: true,
       message: '设置已保存',
     }
     logs.value.push(logLine(`远程命令超时已设置为 ${commandTimeoutSeconds} 秒`))
+    logs.value.push(
+      logLine(minimizeToTray ? '关闭按钮已改为最小化到托盘' : '关闭按钮已恢复直接退出'),
+    )
   } catch (error) {
     settingsResult.value = {
       ok: false,
@@ -1047,14 +1062,16 @@ async function loadStoredData() {
   isLoadingStoredData.value = true
 
   try {
-    const [info, servers, runs, deploymentRows, defaultServerId, commandTimeoutSeconds] = await Promise.all([
-      bridge.data.getStorageInfo(),
-      bridge.servers.list(),
-      bridge.history.listCommandRuns(50),
-      bridge.history.listDeployments(50),
-      bridge.settings.get('defaultServerId', ''),
-      bridge.settings.get('commandTimeoutSeconds', DEFAULT_COMMAND_TIMEOUT_SECONDS),
-    ])
+    const [info, servers, runs, deploymentRows, defaultServerId, commandTimeoutSeconds, minimizeToTray] =
+      await Promise.all([
+        bridge.data.getStorageInfo(),
+        bridge.servers.list(),
+        bridge.history.listCommandRuns(50),
+        bridge.history.listDeployments(50),
+        bridge.settings.get('defaultServerId', ''),
+        bridge.settings.get('commandTimeoutSeconds', DEFAULT_COMMAND_TIMEOUT_SECONDS),
+        bridge.settings.get('minimizeToTray', false),
+      ])
 
     storageInfo.value = info
     savedServers.value = servers
@@ -1062,6 +1079,7 @@ async function loadStoredData() {
     deployments.value = deploymentRows
     pinnedServerId.value = String(defaultServerId || '')
     workspaceSettings.commandTimeoutSeconds = normalizeCommandTimeoutSeconds(commandTimeoutSeconds)
+    workspaceSettings.minimizeToTray = Boolean(minimizeToTray)
     savedServers.value.sort(compareSavedServers)
     await loadDockerfileTemplates()
     await loadServiceTemplates()
@@ -1716,6 +1734,27 @@ function selectSavedServer(serverId) {
   metricsError.value = ''
   lastTestedSnapshot.value = ''
   logs.value.push(logLine(`已载入服务器配置: ${server.name}`))
+}
+
+/**
+ * 双击侧边栏服务器时直接发起连接。
+ * 先同步回填表单，再检查凭据是否齐全，避免拿空密码白跑一次连接测试。
+ */
+async function connectSavedServer(serverId) {
+  const server = savedServers.value.find((item) => item.id === serverId)
+
+  if (!server) {
+    return
+  }
+
+  selectSavedServer(serverId)
+
+  if (!canAutoConnectServer(server)) {
+    logs.value.push(logLine(`${server.name} 凭据不完整，请先补充密码或私钥`))
+    return
+  }
+
+  await testConnection()
 }
 
 /**
@@ -2970,6 +3009,7 @@ export function useWorkspaceSession() {
     createNewServer,
     pinServer,
     selectSavedServer,
+    connectSavedServer,
     updateForm,
     updateCommandText,
     updatePackageForm,

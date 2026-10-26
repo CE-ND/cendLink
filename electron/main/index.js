@@ -8,7 +8,9 @@ import { registerRemoteFileHandlers } from '../ipc/remoteFiles.handlers.js'
 import { registerSshHandlers } from '../ipc/ssh.handlers.js'
 import { registerStorageHandlers } from '../ipc/storage.handlers.js'
 import { bindWindowStateEvents, registerWindowHandlers } from '../ipc/window.handlers.js'
+import { initCloseToTray, shouldHideToTray } from './trayManager.js'
 import { initializeDatabase } from '../services/database/index.js'
+import { getSetting } from '../services/database/repositories/settingsRepository.js'
 
 const { app, BrowserWindow, Menu, ipcMain, screen } = electron
 const __filename = fileURLToPath(import.meta.url)
@@ -50,6 +52,16 @@ function createWindow() {
   mainWindow.setMenuBarVisibility(false)
   bindWindowStateEvents(mainWindow)
 
+  // 开启「关闭时最小化到托盘」后，关闭只隐藏窗口，由托盘菜单恢复或退出。
+  mainWindow.on('close', (event) => {
+    if (!shouldHideToTray()) {
+      return
+    }
+
+    event.preventDefault()
+    mainWindow.hide()
+  })
+
   if (app.isPackaged) {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'dist', 'index.html'))
     return
@@ -66,6 +78,8 @@ app.whenReady().then(async () => {
   // 初始化顺序：先准备本地数据库，再注册 IPC，最后创建窗口。
   Menu.setApplicationMenu(null)
   await initializeDatabase()
+  // 关闭行为设置持久化在 app_settings，启动时读一次决定托盘图标是否常驻。
+  initCloseToTray(Boolean(await getSetting('minimizeToTray', false)))
   registerDeploymentHandlers(ipcMain)
   registerDockerHandlers(ipcMain)
   registerFrontendUploadHandlers(ipcMain)

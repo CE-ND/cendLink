@@ -15,6 +15,9 @@ const api = {
     isMaximized() {
       return ipcRenderer.invoke('window:is-maximized')
     },
+    setCloseToTray(enabled) {
+      return ipcRenderer.invoke('window:set-close-to-tray', Boolean(enabled))
+    },
     onMaximizedChange(callback) {
       const listener = (_event, isMaximized) => {
         callback(Boolean(isMaximized))

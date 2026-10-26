@@ -127,10 +127,10 @@
      xterm background 一个明确的同步锚点。 */
   --terminal-stage: var(--surface);
 
-  --font-sans: 'Segoe UI Variable', 'Segoe UI', 'Microsoft YaHei UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Noto Sans CJK SC', 'Source Han Sans SC', system-ui, sans-serif;
+  --font-sans: 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC',
+    'Hiragino Sans GB', 'Source Han Sans SC', system-ui, sans-serif;
   --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'SFMono-Regular',
-    ui-monospace, monospace;
+    ui-monospace, 'Noto Sans SC', 'Microsoft YaHei UI', monospace;
   --titlebar-height: 34px;
 
   color: var(--text);
@@ -746,6 +746,15 @@ h3 {
   gap: 10px;
   min-width: 0;
   flex: 1;
+}
+
+/* AppTooltip 的触发层包住了 server-row-main，需要接手它原来的 flex: 1 撑满行为，
+   否则气泡触发区会缩成 fit-content，点击热区和文字省略都会失效。 */
+.server-row > .server-row-tooltip {
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }
 
 .server-row-copy {
@@ -4180,9 +4189,9 @@ h3 {
 .settings-modal {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  max-width: 560px;
-  max-height: calc(100vh - 96px);
+  /* 4:3 横向版心：宽度同时被视口的宽和高夹住，任何窗口尺寸下都保持 4:3 且不超高。 */
+  width: min(1020px, calc(100vw - 88px), calc((100vh - 88px) * 4 / 3));
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -4195,8 +4204,7 @@ h3 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 22px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 20px 22px 14px;
 }
 
 .settings-modal-header h3 {
@@ -4236,21 +4244,42 @@ h3 {
 }
 
 .settings-modal-body {
-  padding: 2px 22px 14px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding: 2px 22px 16px;
   overflow: auto;
 }
 
-/* 模态框内的分组间距与行高，比整页版本更紧凑 */
-.settings-modal-body .settings-group + .settings-group {
-  margin-top: 18px;
+/* 4:3 版心里的左右两条卡片列，各自独立排布，互不拉齐行高。 */
+.settings-column {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-width: 0;
+}
+
+/* 分割线退役：分组改成 surface-subtle 色块卡片，靠与 modal 底的色差划界。 */
+.settings-modal-body .settings-group {
+  gap: 2px;
+  padding: 12px 14px 14px;
+  border-top: 0;
+  border-radius: 12px;
+  background: var(--surface-subtle);
 }
 
 .settings-modal-body .settings-group-head {
-  min-height: 50px;
+  min-height: 0;
+  padding: 2px 4px 8px;
+  border-bottom: 0;
 }
 
 .settings-modal-body .settings-row {
-  min-height: 60px;
+  min-height: 0;
+  gap: 20px;
+  padding: 8px 4px;
+  border-bottom: 0;
 }
 
 .settings-path-row .settings-row-copy {
@@ -4286,8 +4315,7 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 22px;
-  border-top: 1px solid var(--border);
+  padding: 4px 22px 18px;
 }
 
 .settings-footer-hint {
@@ -4333,6 +4361,13 @@ h3 {
   .settings-modal-enter-from .settings-modal,
   .settings-modal-leave-to .settings-modal {
     transform: none;
+  }
+}
+
+/* 窄口（如浏览器预览窗）下退回单列，卡片全宽堆叠。 */
+@media (max-width: 900px) {
+  .settings-modal-body {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4425,6 +4460,63 @@ h3 {
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+}
+
+/* 关闭行为行是整行可点的 switch：无描边，hover / 聚焦用 accent 在卡片底上轻染。 */
+.settings-toggle-row {
+  width: 100%;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.settings-toggle-row:hover {
+  background: color-mix(in oklch, var(--accent) 8%, var(--surface-subtle));
+}
+
+.settings-toggle-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--accent) 45%, transparent);
+}
+
+/* 开关滑块与 .frontend-restart-track 同一配方，尺寸放大到设置行可读的一档。 */
+.settings-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 19px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.settings-switch i {
+  position: absolute;
+  top: 2.5px;
+  left: 2.5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--switch-knob);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.settings-switch.active {
+  background: var(--accent);
+}
+
+.settings-switch.active i {
+  background: var(--text-on-fill);
+  transform: translateX(15px);
 }
 
 /* 主题分段控件：浅/深二选一，滑块滑到选中项，与 nav / history 分段同一动效语言。 */

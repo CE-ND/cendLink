@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Moon, Settings, Sun } from '@lucide/vue'
+import AppTooltip from '../ui/AppTooltip.vue'
 
 // 侧边栏是渲染进程工作区页面的统一导航入口。
 defineProps({
@@ -37,7 +38,7 @@ defineProps({
   },
 })
 
-const emit = defineEmits(['selectServer', 'pinServer', 'createServer', 'openSettings', 'toggleTheme'])
+const emit = defineEmits(['selectServer', 'connectServer', 'pinServer', 'createServer', 'openSettings', 'toggleTheme'])
 
 const route = useRoute()
 const router = useRouter()
@@ -174,27 +175,34 @@ function createServer() {
         class="server-row"
         :class="{ selected: activeServerId === server.id }"
       >
-        <button
-          class="server-row-main server-row-button"
-          :class="{ selected: activeServerId === server.id }"
-          type="button"
-          @click="emit('selectServer', server.id)"
+        <AppTooltip
+          class="server-row-tooltip"
+          content="单击载入配置，双击直接连接"
+          placement="top"
         >
-          <span
-            class="status-dot"
-            :class="{
-              connected: server.lastStatus === 'connected',
-              failed: server.lastStatus === 'failed',
-            }"
-          ></span>
-          <div class="server-row-copy">
-            <div class="server-row-title">
-              <strong>{{ server.name }}</strong>
-              <span v-if="pinnedServerId === server.id" class="server-tag">默认</span>
+          <button
+            class="server-row-main server-row-button"
+            :class="{ selected: activeServerId === server.id }"
+            type="button"
+            @click="emit('selectServer', server.id)"
+            @dblclick="emit('connectServer', server.id)"
+          >
+            <span
+              class="status-dot"
+              :class="{
+                connected: server.lastStatus === 'connected',
+                failed: server.lastStatus === 'failed',
+              }"
+            ></span>
+            <div class="server-row-copy">
+              <div class="server-row-title">
+                <strong>{{ server.name }}</strong>
+                <span v-if="pinnedServerId === server.id" class="server-tag">默认</span>
+              </div>
+              <small>{{ server.host }}:{{ server.port }}</small>
             </div>
-            <small>{{ server.host }}:{{ server.port }}</small>
-          </div>
-        </button>
+          </button>
+        </AppTooltip>
 
         <button
           type="button"
